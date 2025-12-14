@@ -8,7 +8,11 @@
       "Bash(npx tsc:*)",
       "Bash(find:*)",
       "Skill(frontend-design)",
-      "Bash(npm install)"
+      "Bash(npm install)",
+      "Bash(node -e:*)",
+      "Bash(dir:*)",
+      "Bash(git stash:*)",
+      "Bash(cat:*)"
     ],
     "deny": []
   },

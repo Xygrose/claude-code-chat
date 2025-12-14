@@ -12,86 +12,54 @@ const getHtml = (isTelemetryEnabled: boolean) => `<!DOCTYPE html>
 </head>
 <body>
 	<!-- ========================================
-	     HEADER - Command Bar
+	     HEADER - Minimal Command Bar with Tabs
 	     ======================================== -->
-	<div class="cr-header">
+	<div class="cr-header minimal">
 		<div class="cr-header-left">
 			<div class="cr-logo">CR</div>
-			<h1 class="cr-title">The Control Room</h1>
-			<span class="cr-stats" id="globalStats">Total: $0.00 | 1 agent</span>
+			<!-- Tab Navigation -->
+			<div class="cr-tabs">
+				<button class="cr-tab active" id="tabChat" onclick="switchTab('chat')">Chat</button>
+				<button class="cr-tab panel-toggle" id="tabAgents" onclick="toggleAgentPanel()">Control Panel</button>
+			</div>
 		</div>
 		<div class="cr-header-right">
-			<div id="sessionStatus" class="session-status" style="display: none;">No session</div>
-			<button class="btn primary" id="newAgentBtn" onclick="newSession()">+ New Agent</button>
+			<span class="cr-stats" id="globalStats" style="font-size: 11px; color: var(--cr-text-muted);">$0.00</span>
 			<button class="btn icon" id="historyBtn" onclick="toggleConversationHistory()" title="History">
-				<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 					<path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
 				</svg>
 			</button>
 			<button class="btn icon" id="settingsBtn" onclick="toggleSettings()" title="Settings">
-				<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-					<path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 					<circle cx="12" cy="12" r="3"/>
+					<path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
 				</svg>
 			</button>
 		</div>
 	</div>
 
 	<!-- ========================================
-	     MAIN LAYOUT - Split View
+	     MAIN LAYOUT - Tab-based Views
 	     ======================================== -->
 	<div class="cr-main">
 		<!-- ========================================
-		     SIDEBAR - Agent List (25%)
+		     CHAT VIEW - Clean, focused chat interface
 		     ======================================== -->
-		<div class="cr-sidebar">
-			<div class="cr-sidebar-header">
-				<span class="cr-sidebar-label">Agents</span>
-			</div>
-			<div class="cr-agent-list" id="agentList">
-				<!-- Agent Card - Selected & Running (Example) -->
-				<div class="agent-card selected" id="agent-default" onclick="selectAgent('default')">
-					<div class="agent-card-header">
-						<span class="agent-name">Agent 1</span>
-						<span class="status-dot idle" id="agent-default-status"></span>
-					</div>
-					<div class="agent-task" id="agent-default-task">Ready for input</div>
-					<div class="agent-meta">
-						<span class="agent-cost" id="agent-default-cost">$0.00</span>
-						<span class="agent-time" id="agent-default-time">--</span>
-					</div>
-				</div>
-			</div>
-		</div>
-
-		<!-- ========================================
-		     CONTENT AREA - Selected Agent (75%)
-		     ======================================== -->
-		<div class="cr-content">
-			<!-- Selected Agent Header -->
-			<div class="cr-agent-header">
-				<div class="cr-agent-info">
-					<span class="status-dot idle" id="selectedAgentStatus"></span>
-					<span class="cr-agent-name" id="selectedAgentName">Agent 1</span>
-					<span class="cr-agent-task-label" id="selectedAgentTask">| Ready for input</span>
-				</div>
-				<div class="cr-agent-controls">
-					<button class="btn secondary small" id="checkpointBtn" onclick="createCheckpoint()" title="Create checkpoint">
-						Checkpoint
-					</button>
-					<button class="btn danger small" id="stopBtn" onclick="stopRequest()" style="display: none;">
-						<svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
-							<path d="M6 6h12v12H6z"/>
-						</svg>
-						Stop
-					</button>
-				</div>
-			</div>
-
+		<div class="cr-view cr-chat-view active" id="chatView">
 			<!-- Output Panel -->
 			<div class="output-panel">
 				<div class="chat-container" id="chatContainer">
-					<div class="messages" id="messages"></div>
+					<div class="messages" id="messages">
+						<!-- Empty state shown when no messages -->
+						<div class="empty-state" id="emptyState">
+							<svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+								<path d="M12 3v18m9-9H3"/>
+							</svg>
+							<div class="empty-state-title">What can I help you build?</div>
+							<div class="empty-state-text">I can help you write code, debug issues, refactor projects, and explore your codebase.</div>
+						</div>
+					</div>
 
 					<!-- WSL Alert for Windows users -->
 					<div id="wslAlert" class="wsl-alert" style="display: none;">
@@ -103,11 +71,11 @@ const getHtml = (isTelemetryEnabled: boolean) => `<!DOCTYPE html>
 								</svg>
 							</div>
 							<div class="wsl-alert-text">
-								<strong>Looks like you are using Windows!</strong><br/>
-								If you are using WSL to run Claude Code, you should enable WSL integration in the settings.
+								<strong>Windows detected</strong><br/>
+								Enable WSL integration in settings if using WSL.
 							</div>
 							<div class="wsl-alert-actions">
-								<button class="btn primary small" onclick="openWSLSettings()">Enable WSL</button>
+								<button class="btn primary small" onclick="openWSLSettings()">Enable</button>
 								<button class="btn secondary small" onclick="dismissWSLAlert()">Dismiss</button>
 							</div>
 						</div>
@@ -120,21 +88,14 @@ const getHtml = (isTelemetryEnabled: boolean) => `<!DOCTYPE html>
 				<!-- Tool approval cards will be inserted here dynamically -->
 			</div>
 
-			<!-- Input Area -->
-			<div class="input-container" id="inputContainer">
-				<div class="input-modes">
-					<div class="mode-toggle">
-						<span onclick="togglePlanMode()">Plan First</span>
-						<div class="mode-switch" id="planModeSwitch" onclick="togglePlanMode()"></div>
-					</div>
-					<div class="mode-toggle">
-						<span id="thinkingModeLabel" onclick="toggleThinkingMode()">Thinking Mode</span>
-						<div class="mode-switch" id="thinkingModeSwitch" onclick="toggleThinkingMode()"></div>
-					</div>
+			<!-- Streamlined Input Area -->
+			<div class="input-container streamlined" id="inputContainer" style="position: relative;">
+				<div class="slash-command-menu" id="slashCommandMenu">
+					<!-- Dynamically populated -->
 				</div>
 				<div class="textarea-container">
 					<div class="textarea-wrapper">
-						<textarea class="input-field" id="messageInput" placeholder="Send a message to this agent... (@ to reference files)" rows="1"></textarea>
+						<textarea class="input-field" id="messageInput" placeholder="Message Claude... (@ for files, / for commands)" rows="1"></textarea>
 						<div class="input-controls">
 							<div class="left-controls">
 								<button class="model-selector" id="modelSelector" onclick="showModelSelector()" title="Select model">
@@ -151,10 +112,10 @@ const getHtml = (isTelemetryEnabled: boolean) => `<!DOCTYPE html>
 								</button>
 							</div>
 							<div class="right-controls">
-								<button class="slash-btn" onclick="showSlashCommandsModal()" title="Slash commands">/</button>
-								<button class="at-btn" onclick="showFilePicker()" title="Reference files">@</button>
-								<button class="image-btn" id="imageBtn" onclick="selectImage()" title="Attach images">
-									<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="14" height="16">
+								<button class="slash-btn" onclick="triggerInlineSlashMenu()" title="Commands">/</button>
+								<button class="at-btn" onclick="showFilePicker()" title="Files">@</button>
+								<button class="image-btn" id="imageBtn" onclick="selectImage()" title="Images">
+									<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="14" height="14">
 										<g fill="currentColor">
 											<path d="M6.002 5.5a1.5 1.5 0 1 1-3 0a1.5 1.5 0 0 1 3 0"></path>
 											<path d="M1.5 2A1.5 1.5 0 0 0 0 3.5v9A1.5 1.5 0 0 0 1.5 14h13a1.5 1.5 0 0 0 1.5-1.5v-9A1.5 1.5 0 0 0 14.5 2zm13 1a.5.5 0 0 1 .5.5v6l-3.775-1.947a.5.5 0 0 0-.577.093l-3.71 3.71l-2.66-1.772a.5.5 0 0 0-.63.062L1.002 12v.54L1 12.5v-9a.5.5 0 0 1 .5-.5z"></path>
@@ -162,45 +123,144 @@ const getHtml = (isTelemetryEnabled: boolean) => `<!DOCTYPE html>
 									</svg>
 								</button>
 								<button class="send-btn" id="sendBtn" onclick="sendMessage()">
-									<span>Send</span>
-									<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="12" height="12">
+									<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16">
 										<path fill="currentColor" d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
 									</svg>
 								</button>
 							</div>
 						</div>
 					</div>
+					<button class="btn danger small" id="stopBtn" onclick="stopRequest()" style="display: none; margin-left: 8px;">
+						Stop
+					</button>
+				</div>
+				<!-- Claude Code Mode Toggle -->
+				<div class="mode-toggle-bar">
+					<div class="mode-toggle-container">
+						<button class="mode-toggle-option" data-mode="plan" onclick="setEditMode('plan')" title="Plan changes without making edits">
+							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+								<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+								<polyline points="14 2 14 8 20 8"/>
+								<line x1="16" y1="13" x2="8" y2="13"/>
+								<line x1="16" y1="17" x2="8" y2="17"/>
+								<polyline points="10 9 9 9 8 9"/>
+							</svg>
+							<span>Planning Mode</span>
+						</button>
+						<div class="mode-toggle-separator"></div>
+						<button class="mode-toggle-option" data-mode="auto" onclick="setEditMode('auto')" title="Automatically apply edits">
+							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+								<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+							</svg>
+							<span>Edit Automatically</span>
+						</button>
+						<div class="mode-toggle-separator"></div>
+						<button class="mode-toggle-option active" data-mode="ask" onclick="setEditMode('ask')" title="Ask before making edits">
+							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+								<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+								<path d="M9 12l2 2 4-4"/>
+							</svg>
+							<span>Ask Before Edits</span>
+						</button>
+					</div>
 				</div>
 			</div>
+		</div>
+
+		<!-- ========================================
+		     AGENTS VIEW - Hidden for compatibility
+		     ======================================== -->
+		<div class="cr-view cr-agents-view" id="agentsView" style="display: none !important;">
+			<div class="cr-agents-header">
+				<h2 class="cr-agents-title">Agents</h2>
+				<button class="btn primary" id="newAgentBtn" onclick="newSession()">+ New Agent</button>
+			</div>
+			<div class="cr-agents-grid" id="agentList">
+				<!-- Agent Card -->
+				<div class="agent-card grid-card selected" id="agent-default" onclick="selectAgentAndSwitch('default')">
+					<div class="agent-card-header">
+						<span class="agent-name">Agent 1</span>
+						<span class="status-dot idle" id="agent-default-status"></span>
+					</div>
+					<div class="agent-task" id="agent-default-task">Ready for input</div>
+					<div class="agent-meta">
+						<span class="agent-cost" id="agent-default-cost">$0.00</span>
+						<span class="agent-time" id="agent-default-time">--</span>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<!-- Hidden elements for compatibility -->
+		<div style="display: none;">
+			<span id="selectedAgentStatus"></span>
+			<span id="selectedAgentName"></span>
+			<span id="selectedAgentTask"></span>
+			<button id="checkpointBtn"></button>
+			<div id="planModeSwitch"></div>
+			<div id="thinkingModeSwitch"></div>
+			<span id="thinkingModeLabel"></span>
+			<div id="sessionStatus" class="session-status">No session</div>
 		</div>
 	</div>
 
 	<!-- ========================================
-	     FOOTER - Status Bar
+	     GLASSMORPHIC AGENT PANEL (Pop-out)
 	     ======================================== -->
-	<div class="cr-footer">
-		<div class="status ready" id="status">
-			<div class="status-indicator"></div>
-			<div class="status-text" id="statusText">Initializing...</div>
+	<div class="agent-panel-overlay" id="agentPanelOverlay" onclick="toggleAgentPanel()"></div>
+
+	<div class="agent-panel" id="agentPanel">
+		<div class="agent-panel-header">
+			<span class="agent-panel-title">Control Panel</span>
+			<button class="agent-panel-close" onclick="toggleAgentPanel()" title="Close panel">
+				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+					<path d="M6 18L18 6M6 6l12 12"/>
+				</svg>
+			</button>
 		</div>
-		<div class="status-legend">
-			<div class="legend-item">
-				<span class="status-dot running"></span>
-				<span>Running</span>
-			</div>
-			<div class="legend-item">
-				<span class="status-dot idle"></span>
-				<span>Idle</span>
-			</div>
-			<div class="legend-item">
-				<span class="status-dot completed"></span>
-				<span>Completed</span>
-			</div>
-			<div class="legend-item">
-				<span class="status-dot error"></span>
-				<span>Error</span>
+
+		<div class="agent-panel-content" id="agentPanelList">
+			<!-- Agent cards will be dynamically populated here -->
+			<div class="agent-card selected" id="panel-agent-default" onclick="selectAgentFromPanel('default')">
+				<div class="agent-card-header">
+					<span class="agent-name">Agent 1</span>
+					<span class="status-dot idle" id="panel-agent-default-dot"></span>
+				</div>
+
+				<!-- Status Badge -->
+				<div class="agent-status-badge idle" id="panel-agent-default-status">
+					<svg viewBox="0 0 24 24" fill="currentColor">
+						<circle cx="12" cy="12" r="4"/>
+					</svg>
+					<span id="panel-agent-default-status-text">Idle</span>
+				</div>
+
+				<!-- Live Preview -->
+				<div class="agent-preview" id="panel-agent-default-preview">
+					<span class="agent-preview-label">Current Activity</span>
+					<span class="agent-preview-text" id="panel-agent-default-preview-text">Ready for input</span>
+				</div>
+
+				<div class="agent-meta">
+					<span class="agent-cost" id="panel-agent-default-cost">$0.00</span>
+					<span class="agent-time" id="panel-agent-default-time">--</span>
+				</div>
 			</div>
 		</div>
+
+		<div class="agent-panel-footer">
+			<button class="new-agent-btn" onclick="newSession()">
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+					<path d="M12 5v14M5 12h14"/>
+				</svg>
+				New Agent
+			</button>
+		</div>
+	</div>
+
+	<!-- Status indicator (hidden, used for JS state tracking) -->
+	<div id="status" class="sr-only" style="display: none;">
+		<span id="statusText">Ready</span>
 	</div>
 
 	<!-- YOLO Warning -->

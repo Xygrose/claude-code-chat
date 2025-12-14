@@ -73,6 +73,32 @@ interface ConversationData {
 	filename: string;
 }
 
+// Multi-agent support
+interface Agent {
+	id: string;
+	name: string;
+	process: cp.ChildProcess | undefined;
+	sessionId: string | undefined;
+	status: 'idle' | 'running' | 'completed' | 'error';
+	conversation: Array<{ timestamp: string, messageType: string, data: any }>;
+	cost: number;
+	tokensInput: number;
+	tokensOutput: number;
+	conversationStartTime: string | undefined;
+	abortController: AbortController | undefined;
+	isWslProcess: boolean;
+	wslDistro: string;
+	pendingPermissionRequests: Map<string, {
+		requestId: string;
+		toolName: string;
+		input: Record<string, unknown>;
+		suggestions?: any[];
+		toolUseId: string;
+	}>;
+}
+
+const MAX_AGENTS = 10;
+
 class ClaudeChatWebviewProvider implements vscode.WebviewViewProvider {
 	constructor(
 		private readonly _extensionUri: vscode.Uri,
@@ -116,17 +142,25 @@ class ClaudeChatProvider {
 	private _webviewView: vscode.WebviewView | undefined;
 	private _disposables: vscode.Disposable[] = [];
 	private _messageHandlerDisposable: vscode.Disposable | undefined;
+
+	// Aggregate stats across all agents (for header display)
 	private _totalCost: number = 0;
 	private _totalTokensInput: number = 0;
 	private _totalTokensOutput: number = 0;
 	private _requestCount: number = 0;
+
 	private _subscriptionType: string | undefined;  // 'pro', 'max', or undefined for API users
 	private _accountInfoFetchedThisSession: boolean = false;  // Track if we fetched account info this session
-	private _currentSessionId: string | undefined;
 	private _backupRepoPath: string | undefined;
 	private _commits: Array<{ id: string, sha: string, message: string, timestamp: string }> = [];
 	private _conversationsPath: string | undefined;
-	// Pending permission requests from stdio control_request messages
+
+	// Multi-agent support
+	private _agents: Map<string, Agent> = new Map();
+	private _activeAgentId: string | undefined;
+
+	// Legacy single-agent variables (kept for backward compatibility during transition)
+	private _currentSessionId: string | undefined;
 	private _pendingPermissionRequests: Map<string, {
 		requestId: string;
 		toolName: string;
@@ -136,6 +170,11 @@ class ClaudeChatProvider {
 	}> = new Map();
 	private _currentConversation: Array<{ timestamp: string, messageType: string, data: any }> = [];
 	private _conversationStartTime: string | undefined;
+	private _currentClaudeProcess: cp.ChildProcess | undefined;
+	private _abortController: AbortController | undefined;
+	private _isWslProcess: boolean = false;
+	private _wslDistro: string = 'Ubuntu';
+
 	private _conversationIndex: Array<{
 		filename: string,
 		sessionId: string,
@@ -146,10 +185,6 @@ class ClaudeChatProvider {
 		firstUserMessage: string,
 		lastUserMessage: string
 	}> = [];
-	private _currentClaudeProcess: cp.ChildProcess | undefined;
-	private _abortController: AbortController | undefined;
-	private _isWslProcess: boolean = false;
-	private _wslDistro: string = 'Ubuntu';
 	private _selectedModel: string = 'default'; // Default model
 	private _isProcessing: boolean | undefined;
 	private _draftMessage: string = '';
@@ -173,9 +208,12 @@ class ClaudeChatProvider {
 		// Load cached subscription type (will be refreshed on first message)
 		this._subscriptionType = this._context.globalState.get('claude.subscriptionType');
 
-		// Resume session from latest conversation
+		// Resume session from latest conversation (for legacy compatibility)
 		const latestConversation = this._getLatestConversation();
 		this._currentSessionId = latestConversation?.sessionId;
+
+		// Create first agent
+		this._createNewAgent();
 	}
 
 	public show(column: vscode.ViewColumn | vscode.Uri = vscode.ViewColumn.Two) {
@@ -283,6 +321,9 @@ class ClaudeChatProvider {
 				data: this._draftMessage
 			});
 		}
+
+		// Send agent list to webview
+		this._notifyAgentListChanged();
 	}
 
 	private _handleWebviewMessage(message: any) {
@@ -292,6 +333,15 @@ class ClaudeChatProvider {
 				return;
 			case 'newSession':
 				this._newSession();
+				return;
+			case 'selectAgent':
+				this._switchToAgent(message.agentId);
+				return;
+			case 'closeAgent':
+				this._closeAgent(message.agentId);
+				return;
+			case 'getAgentList':
+				this._notifyAgentListChanged();
 				return;
 			case 'restoreCommit':
 				this._restoreToCommit(message.commitSha);
@@ -459,6 +509,32 @@ class ClaudeChatProvider {
 		const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
 		const cwd = workspaceFolder ? workspaceFolder.uri.fsPath : process.cwd();
 
+		// Get active agent (create one if none exists)
+		let agent: Agent | undefined;
+		try {
+			agent = this._getActiveAgent();
+			if (!agent) {
+				this._createNewAgent();
+				agent = this._getActiveAgent();
+			}
+
+			if (agent) {
+				// Auto-name agent from first message if still default
+				if (agent.name === 'New Agent') {
+					agent.name = this._generateAgentName(message);
+					this._notifyAgentListChanged();
+				}
+
+				// Update agent status
+				agent.status = 'running';
+				this._notifyAgentListChanged();
+			}
+		} catch (e) {
+			console.error('Error handling agent:', e);
+			// Continue without agent tracking
+			agent = undefined;
+		}
+
 		// Get thinking intensity setting
 		const configThink = vscode.workspace.getConfiguration('claudeCodeChat');
 		const thinkingIntensity = configThink.get<string>('thinking.intensity', 'think');
@@ -524,6 +600,7 @@ class ClaudeChatProvider {
 		const args = [
 			'--output-format', 'stream-json',
 			'--input-format', 'stream-json',
+			'--include-partial-messages', // Enable streaming deltas for real-time text rendering
 			'--verbose'
 		];
 
@@ -617,6 +694,18 @@ class ClaudeChatProvider {
 		// Store process reference for potential termination
 		this._currentClaudeProcess = claudeProcess;
 
+		// Also store on the active agent (defensive)
+		try {
+			if (agent) {
+				agent.process = claudeProcess;
+				agent.abortController = this._abortController;
+				agent.isWslProcess = this._isWslProcess;
+				agent.wslDistro = this._wslDistro;
+			}
+		} catch (e) {
+			console.error('Error storing process on agent:', e);
+		}
+
 		// Send the message to Claude's stdin as JSON (stream-json input format)
 		// Don't end stdin yet - we need to keep it open for permission responses
 		if (claudeProcess.stdin) {
@@ -708,6 +797,17 @@ class ClaudeChatProvider {
 			// Clear process reference
 			this._currentClaudeProcess = undefined;
 
+			// Update agent status (defensive)
+			try {
+				if (agent) {
+					agent.process = undefined;
+					agent.status = code === 0 ? 'completed' : 'error';
+					this._notifyAgentListChanged();
+				}
+			} catch (e) {
+				console.error('Error updating agent status on close:', e);
+			}
+
 			// Cancel any pending permission requests (process is gone)
 			this._cancelPendingPermissionRequests();
 
@@ -743,6 +843,17 @@ class ClaudeChatProvider {
 
 			// Clear process reference
 			this._currentClaudeProcess = undefined;
+
+			// Update agent status (defensive)
+			try {
+				if (agent) {
+					agent.process = undefined;
+					agent.status = 'error';
+					this._notifyAgentListChanged();
+				}
+			} catch (e) {
+				console.error('Error updating agent status on error:', e);
+			}
 
 			// Cancel any pending permission requests (process is gone)
 			this._cancelPendingPermissionRequests();
@@ -780,7 +891,12 @@ class ClaudeChatProvider {
 					// System initialization message - session ID will be captured from final result
 					console.log('System initialized');
 					this._currentSessionId = jsonData.session_id;
-					//this._sendAndSaveMessage({ type: 'init', data: { sessionId: jsonData.session_id; } })
+
+					// Also update active agent's session ID
+					const activeAgent = this._getActiveAgent();
+					if (activeAgent) {
+						activeAgent.sessionId = jsonData.session_id;
+					}
 
 					// Show session info in UI
 					this._sendAndSaveMessage({
@@ -1029,6 +1145,21 @@ class ClaudeChatProvider {
 
 						this._currentSessionId = jsonData.session_id;
 
+						// Also update active agent's session ID
+						const resultAgent = this._getActiveAgent();
+						if (resultAgent) {
+							resultAgent.sessionId = jsonData.session_id;
+							// Update agent stats
+							if (jsonData.total_cost_usd) {
+								resultAgent.cost += jsonData.total_cost_usd;
+							}
+							if (jsonData.usage) {
+								resultAgent.tokensInput += jsonData.usage.input_tokens || 0;
+								resultAgent.tokensOutput += jsonData.usage.output_tokens || 0;
+							}
+							this._notifyAgentListChanged();
+						}
+
 						// Show session info in UI
 						this._sendAndSaveMessage({
 							type: 'sessionInfo',
@@ -1073,40 +1204,249 @@ class ClaudeChatProvider {
 					});
 				}
 				break;
+
+			case 'content_block_start':
+				// Start of a new content block (text, tool_use, etc.)
+				if (jsonData.content_block?.type === 'text') {
+					this._postMessage({
+						type: 'streamStart',
+						blockIndex: jsonData.index
+					});
+				}
+				break;
+
+			case 'content_block_delta':
+				// Incremental update to content block
+				if (jsonData.delta?.type === 'text_delta') {
+					this._postMessage({
+						type: 'streamDelta',
+						text: jsonData.delta.text,
+						blockIndex: jsonData.index
+					});
+				}
+				break;
+
+			case 'content_block_stop':
+				// Content block completed
+				this._postMessage({
+					type: 'streamEnd',
+					blockIndex: jsonData.index
+				});
+				break;
 		}
 	}
 
 
-	private async _newSession(): Promise<void> {
-		this._isProcessing = false;
+	// ==================== Multi-Agent Management ====================
 
-		// Update UI state
-		this._postMessage({
-			type: 'setProcessing',
-			data: { isProcessing: false }
-		});
+	private _generateAgentId(): string {
+		return `agent-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+	}
 
-		// Kill Claude process and all child processes
-		await this._killClaudeProcess();
+	private _createNewAgent(): string | undefined {
+		// Enforce max agent limit
+		if (this._agents.size >= MAX_AGENTS) {
+			vscode.window.showWarningMessage(`Maximum of ${MAX_AGENTS} agents reached. Close an agent to create a new one.`);
+			return undefined;
+		}
 
-		// Clear current session
-		this._currentSessionId = undefined;
+		const agentId = this._generateAgentId();
+		const agent: Agent = {
+			id: agentId,
+			name: 'New Agent',  // Placeholder until first message
+			process: undefined,
+			sessionId: undefined,
+			status: 'idle',
+			conversation: [],
+			cost: 0,
+			tokensInput: 0,
+			tokensOutput: 0,
+			conversationStartTime: undefined,
+			abortController: undefined,
+			isWslProcess: false,
+			wslDistro: 'Ubuntu',
+			pendingPermissionRequests: new Map(),
+		};
+		this._agents.set(agentId, agent);
+		this._activeAgentId = agentId;
 
-		// Clear commits and conversation
-		this._commits = [];
-		this._currentConversation = [];
-		this._conversationStartTime = undefined;
+		// Sync legacy variables for backward compatibility
+		this._syncLegacyVariables(agent);
 
-		// Reset counters
-		this._totalCost = 0;
-		this._totalTokensInput = 0;
-		this._totalTokensOutput = 0;
-		this._requestCount = 0;
+		this._notifyAgentListChanged();
+		console.log(`Created new agent: ${agentId}, total agents: ${this._agents.size}`);
+		return agentId;
+	}
 
-		// Notify webview to clear all messages and reset session
+	private _getActiveAgent(): Agent | undefined {
+		if (!this._activeAgentId) return undefined;
+		return this._agents.get(this._activeAgentId);
+	}
+
+	private _syncLegacyVariables(agent: Agent): void {
+		// Keep legacy variables in sync with active agent for backward compatibility
+		this._currentSessionId = agent.sessionId;
+		this._currentConversation = agent.conversation;
+		this._conversationStartTime = agent.conversationStartTime;
+		this._currentClaudeProcess = agent.process;
+		this._abortController = agent.abortController;
+		this._isWslProcess = agent.isWslProcess;
+		this._wslDistro = agent.wslDistro;
+		this._pendingPermissionRequests = agent.pendingPermissionRequests;
+	}
+
+	private _switchToAgent(agentId: string): void {
+		const agent = this._agents.get(agentId);
+		if (!agent) {
+			console.error(`Agent not found: ${agentId}`);
+			return;
+		}
+
+		this._activeAgentId = agentId;
+		this._syncLegacyVariables(agent);
+
+		// Clear current webview and load agent's conversation
 		this._postMessage({
 			type: 'sessionCleared'
 		});
+
+		// Replay agent's conversation to webview
+		for (const msg of agent.conversation) {
+			this._postMessage(msg.data);
+		}
+
+		// Update processing state based on agent status
+		this._isProcessing = agent.status === 'running';
+		this._postMessage({
+			type: 'setProcessing',
+			data: { isProcessing: this._isProcessing }
+		});
+
+		this._notifyAgentListChanged();
+		console.log(`Switched to agent: ${agentId}`);
+	}
+
+	private _notifyAgentListChanged(): void {
+		const agentList = Array.from(this._agents.values()).map(agent => ({
+			id: agent.id,
+			name: agent.name,
+			status: agent.status,
+			tokensInput: agent.tokensInput,
+			tokensOutput: agent.tokensOutput,
+			cost: agent.cost,
+		}));
+
+		this._postMessage({
+			type: 'agentListChanged',
+			data: {
+				agents: agentList,
+				activeAgentId: this._activeAgentId
+			}
+		});
+	}
+
+	private _generateAgentName(firstMessage: string): string {
+		// Truncate to ~30 chars, clean up
+		const cleaned = firstMessage.replace(/\n/g, ' ').trim();
+		return cleaned.length > 30 ? cleaned.substring(0, 30) + '...' : cleaned;
+	}
+
+	private async _closeAgent(agentId: string): Promise<void> {
+		const agent = this._agents.get(agentId);
+		if (!agent) return;
+
+		// If agent is running, ask for confirmation
+		if (agent.status === 'running' && agent.process) {
+			const confirm = await vscode.window.showWarningMessage(
+				`Agent "${agent.name}" is still running. Terminate it?`,
+				{ modal: true },
+				'Terminate'
+			);
+			if (confirm !== 'Terminate') return;
+		}
+
+		// Kill process if exists
+		if (agent.process) {
+			await this._killAgentProcess(agent);
+		}
+
+		this._agents.delete(agentId);
+		console.log(`Closed agent: ${agentId}, remaining agents: ${this._agents.size}`);
+
+		// Switch to another agent or create new one
+		if (this._activeAgentId === agentId) {
+			const remaining = Array.from(this._agents.keys());
+			if (remaining.length > 0) {
+				this._switchToAgent(remaining[0]);
+			} else {
+				this._createNewAgent();
+			}
+		}
+
+		this._notifyAgentListChanged();
+	}
+
+	private async _killAgentProcess(agent: Agent): Promise<void> {
+		const processToKill = agent.process;
+		const pid = processToKill?.pid;
+
+		// Abort via controller
+		agent.abortController?.abort();
+		agent.abortController = undefined;
+
+		// Clear reference
+		agent.process = undefined;
+
+		if (!pid) return;
+
+		console.log(`Terminating agent ${agent.id} process (PID: ${pid})...`);
+
+		// Kill process group
+		await this._killProcessGroup(pid, 'SIGTERM');
+
+		// Wait for process to exit, with timeout
+		const exitPromise = new Promise<void>((resolve) => {
+			if (processToKill?.killed) {
+				resolve();
+				return;
+			}
+			processToKill?.once('exit', () => resolve());
+		});
+
+		const timeoutPromise = new Promise<void>((resolve) => {
+			setTimeout(() => resolve(), 2000);
+		});
+
+		await Promise.race([exitPromise, timeoutPromise]);
+
+		// Force kill if still running
+		if (processToKill && !processToKill.killed) {
+			console.log(`Force killing agent ${agent.id} process (PID: ${pid})...`);
+			await this._killProcessGroup(pid, 'SIGKILL');
+		}
+
+		agent.status = 'idle';
+		console.log(`Agent ${agent.id} process terminated`);
+	}
+
+	// ==================== Legacy _newSession (now creates new agent) ====================
+
+	private async _newSession(): Promise<void> {
+		// Instead of killing the old session, create a new agent
+		const newAgentId = this._createNewAgent();
+
+		if (newAgentId) {
+			// Clear the webview for the new agent
+			this._postMessage({
+				type: 'sessionCleared'
+			});
+
+			this._isProcessing = false;
+			this._postMessage({
+				type: 'setProcessing',
+				data: { isProcessing: false }
+			});
+		}
 	}
 
 	public newSessionOnConfigChange() {

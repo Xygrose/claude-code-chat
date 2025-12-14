@@ -18,6 +18,10 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 		let lastPendingEditIndex = -1; // Track the last Edit/MultiEdit/Write toolUse without result
 		let lastPendingEditData = null; // Store diff data for the pending edit { filePath, oldContent, newContent }
 
+		// Streaming state
+		let streamingMessageEl = null;
+		let streamingText = '';
+
 		// Open diff using stored data (no file read needed)
 		function openDiffEditor() {
 			if (lastPendingEditData) {
@@ -44,16 +48,58 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 			if (shouldScroll === null) {
 				shouldScroll = shouldAutoScroll(messagesDiv);
 			}
-			
+
 			if (shouldScroll) {
 				messagesDiv.scrollTop = messagesDiv.scrollHeight;
+			}
+		}
+
+		// Streaming message helpers
+		function createStreamingMessage() {
+			const messagesDiv = document.getElementById('messages');
+			hideEmptyState();
+
+			const messageDiv = document.createElement('div');
+			messageDiv.className = 'message claude streaming';
+			messageDiv.innerHTML = \`
+				<div class="message-header">
+					<span class="message-icon">🤖</span>
+					<span class="message-label">Claude</span>
+				</div>
+				<div class="message-content"><span class="streaming-cursor"></span></div>
+			\`;
+			messagesDiv.appendChild(messageDiv);
+			return messageDiv;
+		}
+
+		function updateStreamingContent(el, text) {
+			const content = el.querySelector('.message-content');
+			if (content) {
+				// Escape HTML to prevent XSS, but preserve newlines
+				const escaped = text
+					.replace(/&/g, '&amp;')
+					.replace(/</g, '&lt;')
+					.replace(/>/g, '&gt;')
+					.replace(/\\n/g, '<br>');
+				content.innerHTML = escaped + '<span class="streaming-cursor"></span>';
+			}
+		}
+
+		function finalizeStreamingMessage(el, text) {
+			el.classList.remove('streaming');
+			const content = el.querySelector('.message-content');
+			if (content) {
+				content.innerHTML = parseSimpleMarkdown(text);
 			}
 		}
 
 		function addMessage(content, type = 'claude') {
 			const messagesDiv = document.getElementById('messages');
 			const shouldScroll = shouldAutoScroll(messagesDiv);
-			
+
+			// Hide empty state when any message is added
+			hideEmptyState();
+
 			const messageDiv = document.createElement('div');
 			messageDiv.className = \`message \${type}\`;
 			
@@ -133,7 +179,10 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 		function addToolUseMessage(data) {
 			const messagesDiv = document.getElementById('messages');
 			const shouldScroll = shouldAutoScroll(messagesDiv);
-			
+
+			// Hide empty state when any message is added
+			hideEmptyState();
+
 			const messageDiv = document.createElement('div');
 			messageDiv.className = 'message tool';
 			
@@ -839,13 +888,16 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 		function sendMessage() {
 			const text = messageInput.value.trim();
 			if (text) {
+				// Hide inline menu if visible
+				hideInlineSlashMenu();
+
 				vscode.postMessage({
 					type: 'sendMessage',
 					text: text,
 					planMode: planModeEnabled,
 					thinkingMode: thinkingModeEnabled
 				});
-				
+
 				messageInput.value = '';
 			}
 		}
@@ -882,21 +934,160 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 			}
 		}
 
-		// Agent management functions for command center UI
-		function updateAgentList(agents) {
-			const agentList = document.getElementById('agentList');
-			if (!agentList) return;
+		// ======================================
+		// Tab Navigation and Agent Panel
+		// ======================================
 
-			// For now, show single agent card
-			agentList.innerHTML = \`
-				<div class="agent-card active" data-agent-id="main">
-					<div class="agent-status running"></div>
-					<div class="agent-info">
-						<div class="agent-name">Agent 1</div>
-						<div class="agent-task">Current session</div>
-					</div>
-				</div>
-			\`;
+		let currentTab = 'chat';
+		let agentPanelOpen = false;
+		let currentEditMode = 'ask'; // 'plan', 'auto', 'ask'
+
+		function switchTab(tab) {
+			currentTab = tab;
+			const chatView = document.getElementById('chatView');
+			const agentsView = document.getElementById('agentsView');
+			const tabChat = document.getElementById('tabChat');
+			const tabAgents = document.getElementById('tabAgents');
+
+			if (tab === 'chat') {
+				if (chatView) chatView.classList.add('active');
+				if (agentsView) agentsView.classList.remove('active');
+				if (tabChat) tabChat.classList.add('active');
+				if (tabAgents) tabAgents.classList.remove('active');
+			} else {
+				if (chatView) chatView.classList.remove('active');
+				if (agentsView) agentsView.classList.add('active');
+				if (tabChat) tabChat.classList.remove('active');
+				if (tabAgents) tabAgents.classList.add('active');
+			}
+		}
+
+		function toggleAgentPanel() {
+			agentPanelOpen = !agentPanelOpen;
+			const panel = document.getElementById('agentPanel');
+			const overlay = document.getElementById('agentPanelOverlay');
+			const tabAgents = document.getElementById('tabAgents');
+
+			if (agentPanelOpen) {
+				if (panel) panel.classList.add('open');
+				if (overlay) overlay.classList.add('open');
+				if (tabAgents) tabAgents.classList.add('active');
+				document.body.classList.add('panel-open');
+			} else {
+				if (panel) panel.classList.remove('open');
+				if (overlay) overlay.classList.remove('open');
+				if (tabAgents) tabAgents.classList.remove('active');
+				document.body.classList.remove('panel-open');
+			}
+		}
+
+		function setEditMode(mode) {
+			currentEditMode = mode;
+			const buttons = document.querySelectorAll('.mode-toggle-option');
+			buttons.forEach(btn => {
+				if (btn.getAttribute('data-mode') === mode) {
+					btn.classList.add('active');
+				} else {
+					btn.classList.remove('active');
+				}
+			});
+
+			// Sync with existing plan mode switch for compatibility
+			if (mode === 'plan') {
+				planModeEnabled = true;
+				const switchElement = document.getElementById('planModeSwitch');
+				if (switchElement) switchElement.classList.add('active');
+			} else {
+				planModeEnabled = false;
+				const switchElement = document.getElementById('planModeSwitch');
+				if (switchElement) switchElement.classList.remove('active');
+			}
+
+			// Log mode change for debugging
+			console.log('Edit mode set to:', mode);
+		}
+
+		function selectAgentFromPanel(agentId) {
+			selectAgent(agentId);
+			toggleAgentPanel(); // Close panel after selection
+		}
+
+		function selectAgentAndSwitch(agentId) {
+			selectAgent(agentId);
+			switchTab('chat');
+		}
+
+		function hideEmptyState() {
+			const emptyState = document.getElementById('emptyState');
+			if (emptyState) {
+				emptyState.style.display = 'none';
+			}
+		}
+
+		// Agent management functions for command center UI
+		// Track current active agent ID
+		var activeAgentId = null;
+		var agentsList = [];
+
+		function updateAgentList(agents, newActiveAgentId) {
+			var agentListEl = document.getElementById('agentList');
+			if (!agentListEl) return;
+
+			agentsList = agents || [];
+			activeAgentId = newActiveAgentId || (agentsList.length > 0 ? agentsList[0].id : null);
+
+			if (agentsList.length === 0) {
+				agentListEl.innerHTML = '<div class="agent-card empty"><div class="agent-info"><div class="agent-name">No agents</div><div class="agent-task">Click + to create one</div></div></div>';
+				return;
+			}
+
+			var html = '';
+			for (var i = 0; i < agentsList.length; i++) {
+				var agent = agentsList[i];
+				var isActive = agent.id === activeAgentId ? 'active' : '';
+				var status = agent.status || 'idle';
+				var name = agent.name || 'New Agent';
+				var stats = formatAgentStats(agent);
+				html += '<div class="agent-card ' + isActive + '" data-agent-id="' + agent.id + "\" onclick=\"selectAgent('" + agent.id + "')\" style=\"display: flex; align-items: flex-start; gap: 10px;\">";
+				html += '<div class="agent-status ' + status + '" style="margin-top: 4px;"></div>';
+				html += '<div class="agent-info" style="flex: 1; min-width: 0;">';
+				html += '<div class="agent-name">' + escapeHtml(name) + '</div>';
+				html += '<div class="agent-task">' + stats + '</div>';
+				html += '</div>';
+				html += "<button class=\"agent-close-btn\" onclick=\"event.stopPropagation(); closeAgent('" + agent.id + "')\" title=\"Close agent\">&times;</button>";
+				html += '</div>';
+			}
+			agentListEl.innerHTML = html;
+
+			// Update header with active agent info
+			for (var j = 0; j < agentsList.length; j++) {
+				if (agentsList[j].id === activeAgentId) {
+					updateAgentHeader(agentsList[j].name, agentsList[j].status);
+					break;
+				}
+			}
+		}
+
+		function formatAgentStats(agent) {
+			if (agent.status === 'running') return 'Working...';
+			if (agent.tokensInput > 0 || agent.tokensOutput > 0) {
+				return (agent.tokensInput + agent.tokensOutput).toLocaleString() + ' tokens';
+			}
+			return agent.status === 'idle' ? 'Ready' : (agent.status || 'Ready');
+		}
+
+		function selectAgent(agentId) {
+			vscode.postMessage({
+				type: 'selectAgent',
+				agentId: agentId
+			});
+		}
+
+		function closeAgent(agentId) {
+			vscode.postMessage({
+				type: 'closeAgent',
+				agentId: agentId
+			});
 		}
 
 		function updateAgentHeader(name, status) {
@@ -1637,6 +1828,264 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 			document.getElementById('slashCommandsModal').style.display = 'none';
 		}
 
+		// ========================================
+		// Inline Slash Command Menu
+		// ========================================
+
+		// Track active menu item for keyboard navigation
+		let inlineMenuActiveIndex = 0;
+		let inlineMenuItems = [];
+
+		// All available commands (will be populated with custom snippets too)
+		function getSlashCommands() {
+			const builtInCommands = [
+				{ id: 'add-dir', name: '/add-dir', description: 'Add working directories', type: 'command', icon: '📁' },
+				{ id: 'clear', name: '/clear', description: 'Clear conversation history', type: 'command', icon: '🗑️' },
+				{ id: 'compact', name: '/compact', description: 'Compact conversation', type: 'command', icon: '📦' },
+				{ id: 'config', name: '/config', description: 'Open Settings', type: 'command', icon: '⚙️' },
+				{ id: 'cost', name: '/cost', description: 'Show token usage', type: 'command', icon: '💰' },
+				{ id: 'doctor', name: '/doctor', description: 'Check installation', type: 'command', icon: '🏥' },
+				{ id: 'help', name: '/help', description: 'Get usage help', type: 'command', icon: '❓' },
+				{ id: 'init', name: '/init', description: 'Initialize with CLAUDE.md', type: 'command', icon: '✅' },
+				{ id: 'login', name: '/login', description: 'Switch accounts', type: 'command', icon: '🔑' },
+				{ id: 'logout', name: '/logout', description: 'Sign out', type: 'command', icon: '🚪' },
+				{ id: 'model', name: '/model', description: 'Select AI model', type: 'command', icon: '🤖' },
+				{ id: 'permissions', name: '/permissions', description: 'Manage permissions', type: 'command', icon: '🛡️' },
+				{ id: 'review', name: '/review', description: 'Request code review', type: 'command', icon: '👁️' },
+				{ id: 'status', name: '/status', description: 'Open Settings', type: 'command', icon: '📊' },
+				{ id: 'usage', name: '/usage', description: 'Show plan usage limits', type: 'command', icon: '📈' }
+			];
+
+			const builtInSnippets = [
+				{ id: 'performance-analysis', name: '/performance-analysis', description: 'Analyze code for performance issues', type: 'snippet', icon: '⚡' },
+				{ id: 'security-review', name: '/security-review', description: 'Review code for security vulnerabilities', type: 'snippet', icon: '🔒' },
+				{ id: 'implementation-review', name: '/implementation-review', description: 'Review the implementation', type: 'snippet', icon: '🔍' },
+				{ id: 'code-explanation', name: '/code-explanation', description: 'Explain how code works', type: 'snippet', icon: '📖' },
+				{ id: 'bug-fix', name: '/bug-fix', description: 'Help fix a bug', type: 'snippet', icon: '🐛' },
+				{ id: 'refactor', name: '/refactor', description: 'Refactor for readability', type: 'snippet', icon: '♻️' },
+				{ id: 'test-generation', name: '/test-generation', description: 'Generate tests for code', type: 'snippet', icon: '🧪' },
+				{ id: 'documentation', name: '/documentation', description: 'Generate documentation', type: 'snippet', icon: '📝' }
+			];
+
+			// Add custom snippets
+			const customSnippets = Object.values(customSnippetsData || {}).map(snippet => ({
+				id: snippet.id,
+				name: '/' + snippet.name,
+				description: snippet.prompt.substring(0, 50) + (snippet.prompt.length > 50 ? '...' : ''),
+				type: 'snippet',
+				icon: '✨'
+			}));
+
+			return [...builtInSnippets, ...customSnippets, ...builtInCommands];
+		}
+
+		function showInlineSlashMenu(filter = '') {
+			const menu = document.getElementById('slashCommandMenu');
+			if (!menu) return;
+
+			const allCommands = getSlashCommands();
+			const filterLower = filter.toLowerCase().replace(/^\//, '');
+
+			// Filter commands based on input
+			const filtered = filterLower
+				? allCommands.filter(cmd =>
+					cmd.name.toLowerCase().includes(filterLower) ||
+					cmd.description.toLowerCase().includes(filterLower))
+				: allCommands;
+
+			if (filtered.length === 0) {
+				hideInlineSlashMenu();
+				return;
+			}
+
+			// Store for keyboard navigation
+			inlineMenuItems = filtered;
+			inlineMenuActiveIndex = 0;
+
+			// Group by type
+			const snippets = filtered.filter(c => c.type === 'snippet');
+			const commands = filtered.filter(c => c.type === 'command');
+
+			let html = '';
+
+			if (snippets.length > 0) {
+				html += '<div class="slash-menu-header">Prompts</div>';
+				snippets.forEach((cmd, idx) => {
+					const globalIdx = idx;
+					html += \`
+						<div class="slash-menu-item \${globalIdx === inlineMenuActiveIndex ? 'active' : ''}"
+							 data-index="\${globalIdx}"
+							 data-id="\${cmd.id}"
+							 data-type="\${cmd.type}"
+							 onclick="selectInlineSlashCommand('\${cmd.id}', '\${cmd.type}')">
+							<div class="slash-menu-icon">\${cmd.icon}</div>
+							<div class="slash-menu-content">
+								<div class="slash-menu-title">\${highlightMatch(cmd.name, filterLower)}</div>
+								<div class="slash-menu-desc">\${cmd.description}</div>
+							</div>
+						</div>
+					\`;
+				});
+			}
+
+			if (commands.length > 0) {
+				html += '<div class="slash-menu-header">Commands</div>';
+				commands.forEach((cmd, idx) => {
+					const globalIdx = snippets.length + idx;
+					html += \`
+						<div class="slash-menu-item \${globalIdx === inlineMenuActiveIndex ? 'active' : ''}"
+							 data-index="\${globalIdx}"
+							 data-id="\${cmd.id}"
+							 data-type="\${cmd.type}"
+							 onclick="selectInlineSlashCommand('\${cmd.id}', '\${cmd.type}')">
+							<div class="slash-menu-icon">\${cmd.icon}</div>
+							<div class="slash-menu-content">
+								<div class="slash-menu-title">\${highlightMatch(cmd.name, filterLower)}</div>
+								<div class="slash-menu-desc">\${cmd.description}</div>
+							</div>
+						</div>
+					\`;
+				});
+			}
+
+			menu.innerHTML = html;
+			menu.classList.add('visible');
+
+			// Add hover listeners for mouse interaction
+			menu.querySelectorAll('.slash-menu-item').forEach(item => {
+				item.addEventListener('mouseenter', () => {
+					inlineMenuActiveIndex = parseInt(item.dataset.index);
+					updateInlineMenuActive();
+				});
+			});
+		}
+
+		function hideInlineSlashMenu() {
+			const menu = document.getElementById('slashCommandMenu');
+			if (menu) {
+				menu.classList.remove('visible');
+				menu.innerHTML = '';
+			}
+			inlineMenuItems = [];
+			inlineMenuActiveIndex = 0;
+		}
+
+		function highlightMatch(text, filter) {
+			if (!filter) return text;
+			const regex = new RegExp('(' + filter.replace(/[.*+?^\${}()|[\\]\\\\]/g, '\\\\$&') + ')', 'gi');
+			return text.replace(regex, '<strong>$1</strong>');
+		}
+
+		function updateInlineMenuActive() {
+			const menu = document.getElementById('slashCommandMenu');
+			if (!menu) return;
+
+			menu.querySelectorAll('.slash-menu-item').forEach((item, idx) => {
+				if (idx === inlineMenuActiveIndex) {
+					item.classList.add('active');
+					// Scroll into view if needed
+					item.scrollIntoView({ block: 'nearest' });
+				} else {
+					item.classList.remove('active');
+				}
+			});
+		}
+
+		function selectInlineSlashCommand(id, type) {
+			hideInlineSlashMenu();
+			messageInput.value = '';
+
+			if (type === 'snippet') {
+				usePromptSnippet(id);
+			} else {
+				executeSlashCommand(id);
+			}
+		}
+
+		function handleInlineMenuKeydown(e) {
+			const menu = document.getElementById('slashCommandMenu');
+			if (!menu || !menu.classList.contains('visible')) return false;
+
+			if (e.key === 'ArrowDown') {
+				e.preventDefault();
+				inlineMenuActiveIndex = Math.min(inlineMenuActiveIndex + 1, inlineMenuItems.length - 1);
+				updateInlineMenuActive();
+				return true;
+			}
+
+			if (e.key === 'ArrowUp') {
+				e.preventDefault();
+				inlineMenuActiveIndex = Math.max(inlineMenuActiveIndex - 1, 0);
+				updateInlineMenuActive();
+				return true;
+			}
+
+			if (e.key === 'Enter' && inlineMenuItems.length > 0) {
+				e.preventDefault();
+				const selected = inlineMenuItems[inlineMenuActiveIndex];
+				if (selected) {
+					selectInlineSlashCommand(selected.id, selected.type);
+				}
+				return true;
+			}
+
+			if (e.key === 'Escape') {
+				e.preventDefault();
+				hideInlineSlashMenu();
+				messageInput.value = '';
+				return true;
+			}
+
+			if (e.key === 'Tab' && inlineMenuItems.length > 0) {
+				e.preventDefault();
+				const selected = inlineMenuItems[inlineMenuActiveIndex];
+				if (selected) {
+					// Tab completes the command name in input
+					messageInput.value = selected.name + ' ';
+					hideInlineSlashMenu();
+				}
+				return true;
+			}
+
+			return false;
+		}
+
+		function isInlineSlashMenuVisible() {
+			const menu = document.getElementById('slashCommandMenu');
+			return menu && menu.classList.contains('visible');
+		}
+
+		// Trigger inline menu from the "/" button
+		function triggerInlineSlashMenu() {
+			// Set "/" in input and show menu
+			if (!messageInput.value.startsWith('/')) {
+				messageInput.value = '/';
+			}
+			messageInput.focus();
+			showInlineSlashMenu(messageInput.value);
+		}
+
+		// Add keyboard listener for inline menu navigation
+		messageInput.addEventListener('keydown', (e) => {
+			if (handleInlineMenuKeydown(e)) {
+				return;
+			}
+		});
+
+		// Close inline menu when clicking outside
+		document.addEventListener('click', (e) => {
+			const menu = document.getElementById('slashCommandMenu');
+			const input = document.getElementById('messageInput');
+			const slashBtn = document.querySelector('.slash-btn');
+
+			if (menu && menu.classList.contains('visible')) {
+				// Check if click is outside menu and input
+				if (!menu.contains(e.target) && e.target !== input && e.target !== slashBtn) {
+					hideInlineSlashMenu();
+				}
+			}
+		});
+
 		// Install modal functions
 		function showInstallModal() {
 			const modal = document.getElementById('installModal');
@@ -1788,8 +2237,9 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 		}
 
 		function executeSlashCommand(command) {
-			// Hide the modal
+			// Hide menus
 			hideSlashCommandsModal();
+			hideInlineSlashMenu();
 
 			// Clear the input since user selected a command
 			messageInput.value = '';
@@ -1844,9 +2294,10 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 			}
 			
 			if (promptText) {
-				// Hide the modal
+				// Hide menus
 				hideSlashCommandsModal();
-				
+				hideInlineSlashMenu();
+
 				// Insert the prompt into the message input
 				messageInput.value = promptText;
 				messageInput.focus();
@@ -2152,15 +2603,25 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 						showStopButton();
 						disableButtons();
 						showProcessingIndicator();
-						updateAgentHeader('Agent 1', 'running');
+						// Update active agent status
+						const runningAgent = agentsList.find(a => a.id === activeAgentId);
+						updateAgentHeader(runningAgent?.name || 'Agent', 'running');
 					} else {
 						stopRequestTimer();
 						hideStopButton();
 						enableButtons();
 						hideProcessingIndicator();
-						updateAgentHeader('Agent 1', 'idle');
+						// Update active agent status
+						const idleAgent = agentsList.find(a => a.id === activeAgentId);
+						updateAgentHeader(idleAgent?.name || 'Agent', 'idle');
 					}
 					updateStatusWithTotals();
+					break;
+
+				case 'agentListChanged':
+					if (message.data) {
+						updateAgentList(message.data.agents, message.data.activeAgentId);
+					}
 					break;
 					
 				case 'clearLoading':
@@ -2252,26 +2713,53 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 					// Update token totals in real-time
 					totalTokensInput = message.data.totalTokensInput || 0;
 					totalTokensOutput = message.data.totalTokensOutput || 0;
-					
+
 					// Update status bar immediately
 					updateStatusWithTotals();
-					
+
 					// Show detailed token breakdown for current message
 					const currentTotal = (message.data.currentInputTokens || 0) + (message.data.currentOutputTokens || 0);
 					if (currentTotal > 0) {
 						let tokenBreakdown = \`📊 Tokens: \${currentTotal.toLocaleString()}\`;
-						
+
 						if (message.data.cacheCreationTokens || message.data.cacheReadTokens) {
 							const cacheInfo = [];
 							if (message.data.cacheCreationTokens) cacheInfo.push(\`\${message.data.cacheCreationTokens.toLocaleString()} cache created\`);
 							if (message.data.cacheReadTokens) cacheInfo.push(\`\${message.data.cacheReadTokens.toLocaleString()} cache read\`);
 							tokenBreakdown += \` • \${cacheInfo.join(' • ')}\`;
 						}
-						
+
 						addMessage(tokenBreakdown, 'system');
 					}
 					break;
-					
+
+				case 'streamStart':
+					// Start of a new streaming text block
+					streamingMessageEl = createStreamingMessage();
+					streamingText = '';
+					scrollToBottomIfNeeded(messagesDiv);
+					break;
+
+				case 'streamDelta':
+					// Incremental text update
+					if (!streamingMessageEl) {
+						streamingMessageEl = createStreamingMessage();
+					}
+					streamingText += message.text;
+					updateStreamingContent(streamingMessageEl, streamingText);
+					scrollToBottomIfNeeded(messagesDiv);
+					break;
+
+				case 'streamEnd':
+					// Streaming completed - finalize with markdown parsing
+					if (streamingMessageEl) {
+						finalizeStreamingMessage(streamingMessageEl, streamingText);
+						streamingMessageEl = null;
+						streamingText = '';
+					}
+					updateStatusWithTotals();
+					break;
+
 				case 'updateTotals':
 					// Update local tracking variables
 					totalCost = message.data.totalCost || 0;
@@ -2651,7 +3139,6 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 		// Session management functions
 		function newSession() {
 			sendStats('New chat');
-			
 			vscode.postMessage({
 				type: 'newSession'
 			});
@@ -3299,12 +3786,16 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 			type: 'getCustomSnippets'
 		});
 
-		// Detect slash commands input
+		// Detect slash commands input - show inline menu
 		messageInput.addEventListener('input', (e) => {
 			const value = messageInput.value;
-			// Only trigger when "/" is the very first and only character
-			if (value === '/') {
-				showSlashCommandsModal();
+
+			// Show inline menu when input starts with "/"
+			if (value.startsWith('/')) {
+				showInlineSlashMenu(value);
+			} else {
+				// Hide menu if "/" is removed
+				hideInlineSlashMenu();
 			}
 		});
 
@@ -3374,8 +3865,9 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 		});
 
 		// Initialize command center UI elements
-		updateAgentList([{ id: 'main', name: 'Agent 1', status: 'idle' }]);
-		updateAgentHeader('Agent 1', 'idle');
+		// Request agent list from backend (will be sent via agentListChanged message)
+		vscode.postMessage({ type: 'getAgentList' });
+		updateAgentHeader('Agent', 'idle');
 
 	</script>`
 
