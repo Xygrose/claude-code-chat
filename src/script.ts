@@ -862,11 +862,11 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 
 		function toggleThinkingMode() {
 			thinkingModeEnabled = !thinkingModeEnabled;
-			
+
 			if (thinkingModeEnabled) {
 				sendStats('Thinking mode enabled');
 			}
-			
+
 			const switchElement = document.getElementById('thinkingModeSwitch');
 			const toggleLabel = document.getElementById('thinkingModeLabel');
 			if (thinkingModeEnabled) {
@@ -879,6 +879,33 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 				if (toggleLabel) {
 					toggleLabel.textContent = 'Thinking Mode';
 				}
+			}
+		}
+
+		// Agent management functions for command center UI
+		function updateAgentList(agents) {
+			const agentList = document.getElementById('agentList');
+			if (!agentList) return;
+
+			// For now, show single agent card
+			agentList.innerHTML = \`
+				<div class="agent-card active" data-agent-id="main">
+					<div class="agent-status running"></div>
+					<div class="agent-info">
+						<div class="agent-name">Agent 1</div>
+						<div class="agent-task">Current session</div>
+					</div>
+				</div>
+			\`;
+		}
+
+		function updateAgentHeader(name, status) {
+			const nameEl = document.getElementById('selectedAgentName');
+			const statusEl = document.getElementById('selectedAgentStatus');
+			if (nameEl) nameEl.textContent = name || 'Agent 1';
+			if (statusEl) {
+				statusEl.className = 'agent-status-badge ' + (status || 'idle');
+				statusEl.textContent = status ? status.charAt(0).toUpperCase() + status.slice(1) : 'Idle';
 			}
 		}
 
@@ -920,18 +947,27 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 		}
 
 		function updateStatusWithTotals() {
+			const totalTokens = totalTokensInput + totalTokensOutput;
+
+			// Update global stats in header
+			const globalStats = document.getElementById('globalStats');
+			if (globalStats) {
+				globalStats.textContent = totalTokens > 0 ?
+					\`\${totalTokens.toLocaleString()} tokens\` :
+					'0 tokens';
+			}
+
 			if (isProcessing) {
 				// While processing, show tokens and elapsed time
-				const totalTokens = totalTokensInput + totalTokensOutput;
-				const tokensStr = totalTokens > 0 ? 
+				const tokensStr = totalTokens > 0 ?
 					\`\${totalTokens.toLocaleString()} tokens\` : '0 tokens';
-				
+
 				let elapsedStr = '';
 				if (requestStartTime) {
 					const elapsedSeconds = Math.floor((Date.now() - requestStartTime) / 1000);
 					elapsedStr = \` • \${elapsedSeconds}s\`;
 				}
-				
+
 				const statusText = \`Processing • \${tokensStr}\${elapsedStr}\`;
 				updateStatus(statusText, 'processing');
 			} else {
@@ -952,7 +988,6 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 					const costStr = totalCost > 0 ? \`$\${totalCost.toFixed(4)}\` : '$0.00';
 					usageStr = \`<a href="#" onclick="event.preventDefault(); viewUsage('api');" class="usage-badge" title="View usage">\${costStr}\${usageIcon}</a>\`;
 				}
-				const totalTokens = totalTokensInput + totalTokensOutput;
 				const tokensStr = totalTokens > 0 ?
 					\`\${totalTokens.toLocaleString()} tokens\` : '0 tokens';
 				const requestStr = requestCount > 0 ? \`\${requestCount} requests\` : '';
@@ -2117,11 +2152,13 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 						showStopButton();
 						disableButtons();
 						showProcessingIndicator();
+						updateAgentHeader('Agent 1', 'running');
 					} else {
 						stopRequestTimer();
 						hideStopButton();
 						enableButtons();
 						hideProcessingIndicator();
+						updateAgentHeader('Agent 1', 'idle');
 					}
 					updateStatusWithTotals();
 					break;
@@ -2391,8 +2428,10 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 		
 		// Permission request functions
 		function addPermissionRequestMessage(data) {
-			const messagesDiv = document.getElementById('messages');
-			const shouldScroll = shouldAutoScroll(messagesDiv);
+			// Try to use toolApprovalArea first (command center layout), fallback to messages
+			const toolApprovalArea = document.getElementById('toolApprovalArea');
+			const targetDiv = toolApprovalArea || document.getElementById('messages');
+			const shouldScroll = toolApprovalArea ? false : shouldAutoScroll(targetDiv);
 
 			const messageDiv = document.createElement('div');
 			messageDiv.className = 'message permission-request';
@@ -2482,8 +2521,11 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 			}
 
 			messageDiv.innerHTML = contentHtml;
-			messagesDiv.appendChild(messageDiv);
-			scrollToBottomIfNeeded(messagesDiv, shouldScroll);
+			targetDiv.appendChild(messageDiv);
+			// Only scroll if using fallback messages div
+			if (!toolApprovalArea) {
+				scrollToBottomIfNeeded(targetDiv, shouldScroll);
+			}
 		}
 
 		function updatePermissionStatus(id, status) {
@@ -3330,6 +3372,10 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 				renderPermissions(message.data);
 			}
 		});
+
+		// Initialize command center UI elements
+		updateAgentList([{ id: 'main', name: 'Agent 1', status: 'idle' }]);
+		updateAgentHeader('Agent 1', 'idle');
 
 	</script>`
 
