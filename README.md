@@ -1,6 +1,6 @@
 # 🚀 Claude Code Chat - Beautiful Claude Code Chat Interface for VS Code
 
-[![VS Code Extension](https://img.shields.io/badge/VS%20Code-Extension-blue?style=for-the-badge&logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=andrepimenta.claude-code-chat)
+[![VS Code Extension](https://img.shields.io/badge/VS%20Code-Extension-blue?style=for-the-badge&logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=Navid.the-control-room)
 [![Claude Code](https://img.shields.io/badge/Powered%20by-Claude%20Code-orange?style=for-the-badge)](https://claude.ai/code)
 [![TypeScript](https://img.shields.io/badge/Built%20with-TypeScript-3178C6?style=for-the-badge&logo=typescript)](https://www.typescriptlang.org/)
 
@@ -135,12 +135,12 @@ Ditch the command line and experience Claude Code like never before. This extens
 
 1. **Install from VS Code Marketplace**
    ```
-   ext install claude-code-chat
+   ext install Navid.the-control-room
    ```
 
 2. **Or install manually**
    - Download the `.vsix` file from releases
-   - Run `code --install-extension claude-code-chat-x.x.x.vsix`
+   - Run `code --install-extension Navid.the-control-room-x.x.x.vsix`
 
 3. **Open Claude Code Chat**
    - Press `Ctrl+Shift+C` (or `Cmd+Shift+C` on Mac)
@@ -314,7 +314,7 @@ We welcome contributions! Here's how you can help:
 
 ### Development Setup
 ```bash
-git clone https://github.com/andrepimenta/claude-code-chat
+git clone https://github.com/Xygrose/claude-code-chat
 cd claude-code-chat
 npm install
 
@@ -341,7 +341,7 @@ See the [LICENSE](LICENSE) file for details.
 
 Need help? We've got you covered:
 
-- 🐛 **Issues**: [GitHub Issues](https://github.com/andrepimenta/claude-code-chat/issues)
+- 🐛 **Issues**: [GitHub Issues](https://github.com/Xygrose/claude-code-chat/issues)
 
 ---
 
@@ -349,6 +349,6 @@ Need help? We've got you covered:
 
 **⭐ Star us on GitHub if this project helped you!**
 
-[**Download Now**](https://marketplace.visualstudio.com/items?itemName=andrepimenta.claude-code-chat)
+[**Download Now**](https://marketplace.visualstudio.com/items?itemName=Navid.the-control-room)
 
 </div>

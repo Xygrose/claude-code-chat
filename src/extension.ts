@@ -1,10 +1,24 @@
 import * as vscode from 'vscode';
 import * as cp from 'child_process';
-import * as util from 'util';
+import * as crypto from 'crypto';
 import * as path from 'path';
 import getHtml from './ui';
 
-const exec = util.promisify(cp.exec);
+function getNonce(): string {
+	return crypto.randomBytes(16).toString('base64').replace(/=+$/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+}
+
+function execFileAsync(command: string, args: string[], options: cp.ExecFileOptions = {}): Promise<{ stdout: string; stderr: string }> {
+	return new Promise((resolve, reject) => {
+		cp.execFile(command, args, { ...options, encoding: 'utf8', windowsHide: true }, (error, stdout, stderr) => {
+			if (error) {
+				reject(error);
+				return;
+			}
+			resolve({ stdout: stdout ?? '', stderr: stderr ?? '' });
+		});
+	});
+}
 
 // Storage for diff content (used by DiffContentProvider)
 const diffContentStore = new Map<string, string>();
@@ -243,7 +257,7 @@ class ClaudeChatProvider {
 		const iconPath = vscode.Uri.joinPath(this._extensionUri, 'icon-bubble.png');
 		this._panel.iconPath = iconPath;
 
-		this._panel.webview.html = this._getHtmlForWebview();
+		this._panel.webview.html = this._getHtmlForWebview(this._panel.webview);
 
 		this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
 
@@ -470,7 +484,7 @@ class ClaudeChatProvider {
 
 		this._webview = webview;
 		this._webviewView = webviewView;
-		this._webview.html = this._getHtmlForWebview();
+		this._webview.html = this._getHtmlForWebview(this._webview);
 
 		this._setupWebviewMessageHandler(this._webview);
 		this._initializePermissions();
@@ -543,7 +557,7 @@ class ClaudeChatProvider {
 		let actualMessage = message;
 		if (thinkingMode) {
 			let thinkingPrompt = '';
-			const thinkingMesssage = ' THROUGH THIS STEP BY STEP: \n'
+			const thinkingMesssage = ' THROUGH THIS STEP BY STEP: \n';
 			switch (thinkingIntensity) {
 				case 'think':
 					thinkingPrompt = 'THINK';
@@ -652,15 +666,13 @@ class ClaudeChatProvider {
 		this._abortController = new AbortController();
 
 		if (wslEnabled) {
-			// Use WSL with bash -ic for proper environment loading
 			console.log('Using WSL configuration:', { wslDistro, nodePath, claudePath });
-			const wslCommand = `"${nodePath}" --no-warnings --enable-source-maps "${claudePath}" ${args.join(' ')}`;
 
 			// Track WSL state for proper process termination
 			this._isWslProcess = true;
 			this._wslDistro = wslDistro;
 
-			claudeProcess = cp.spawn('wsl', ['-d', wslDistro, 'bash', '-ic', wslCommand], {
+			claudeProcess = cp.spawn('wsl', ['-d', wslDistro, '--', nodePath, '--no-warnings', '--enable-source-maps', claudePath, ...args], {
 				signal: this._abortController.signal,
 				detached: process.platform !== 'win32',
 				cwd: cwd,
@@ -1067,7 +1079,7 @@ class ClaudeChatProvider {
 							const isError = content.is_error || false;
 
 							// Find the last tool use to get the tool name, input, and computed startLine
-							const lastToolUse = this._currentConversation[this._currentConversation.length - 1]
+							const lastToolUse = this._currentConversation[this._currentConversation.length - 1];
 
 							const toolName = lastToolUse?.data?.toolName;
 							const rawInput = lastToolUse?.data?.rawInput;
@@ -1279,7 +1291,9 @@ class ClaudeChatProvider {
 	}
 
 	private _getActiveAgent(): Agent | undefined {
-		if (!this._activeAgentId) return undefined;
+		if (!this._activeAgentId) {
+			return undefined;
+		}
 		return this._agents.get(this._activeAgentId);
 	}
 
@@ -1353,7 +1367,9 @@ class ClaudeChatProvider {
 
 	private async _closeAgent(agentId: string): Promise<void> {
 		const agent = this._agents.get(agentId);
-		if (!agent) return;
+		if (!agent) {
+			return;
+		}
 
 		// If agent is running, ask for confirmation
 		if (agent.status === 'running' && agent.process) {
@@ -1362,7 +1378,9 @@ class ClaudeChatProvider {
 				{ modal: true },
 				'Terminate'
 			);
-			if (confirm !== 'Terminate') return;
+			if (confirm !== 'Terminate') {
+				return;
+			}
 		}
 
 		// Kill process if exists
@@ -1397,7 +1415,9 @@ class ClaudeChatProvider {
 		// Clear reference
 		agent.process = undefined;
 
-		if (!pid) return;
+		if (!pid) {
+			return;
+		}
 
 		console.log(`Terminating agent ${agent.id} process (PID: ${pid})...`);
 
@@ -1492,13 +1512,19 @@ class ClaudeChatProvider {
 		const claudePath = config.get<string>('wsl.claudePath', '/usr/local/bin/claude');
 
 		// Open terminal and run claude login
-		const terminal = vscode.window.createTerminal({
-			name: 'Claude Login',
-			location: { viewColumn: vscode.ViewColumn.One }
-		});
+		let terminal: vscode.Terminal;
 		if (wslEnabled) {
-			terminal.sendText(`wsl -d ${wslDistro} ${nodePath} --no-warnings --enable-source-maps ${claudePath}`);
+			terminal = vscode.window.createTerminal({
+				name: 'Claude Login',
+				location: { viewColumn: vscode.ViewColumn.One },
+				shellPath: 'wsl',
+				shellArgs: ['-d', wslDistro, '--', nodePath, '--no-warnings', '--enable-source-maps', claudePath],
+			});
 		} else {
+			terminal = vscode.window.createTerminal({
+				name: 'Claude Login',
+				location: { viewColumn: vscode.ViewColumn.One }
+			});
 			terminal.sendText('claude');
 		}
 		terminal.show();
@@ -1538,9 +1564,9 @@ class ClaudeChatProvider {
 				const workspacePath = workspaceFolder.uri.fsPath;
 
 				// Initialize git repo with workspace as work-tree
-				await exec(`git --git-dir="${this._backupRepoPath}" --work-tree="${workspacePath}" init`);
-				await exec(`git --git-dir="${this._backupRepoPath}" config user.name "Claude Code Chat"`);
-				await exec(`git --git-dir="${this._backupRepoPath}" config user.email "claude@anthropic.com"`);
+				await execFileAsync('git', ['--git-dir', this._backupRepoPath, '--work-tree', workspacePath, 'init']);
+				await execFileAsync('git', ['--git-dir', this._backupRepoPath, 'config', 'user.name', 'Claude Code Chat']);
+				await execFileAsync('git', ['--git-dir', this._backupRepoPath, 'config', 'user.email', 'claude@anthropic.com']);
 
 				console.log(`Initialized backup repository at: ${this._backupRepoPath}`);
 			}
@@ -1561,18 +1587,18 @@ class ClaudeChatProvider {
 			const commitMessage = `Before: ${userMessage.substring(0, 50)}${userMessage.length > 50 ? '...' : ''}`;
 
 			// Add all files using git-dir and work-tree (excludes .git automatically)
-			await exec(`git --git-dir="${this._backupRepoPath}" --work-tree="${workspacePath}" add -A`);
+			await execFileAsync('git', ['--git-dir', this._backupRepoPath, '--work-tree', workspacePath, 'add', '-A']);
 
 			// Check if this is the first commit (no HEAD exists yet)
 			let isFirstCommit = false;
 			try {
-				await exec(`git --git-dir="${this._backupRepoPath}" rev-parse HEAD`);
+				await execFileAsync('git', ['--git-dir', this._backupRepoPath, 'rev-parse', 'HEAD']);
 			} catch {
 				isFirstCommit = true;
 			}
 
 			// Check if there are changes to commit
-			const { stdout: status } = await exec(`git --git-dir="${this._backupRepoPath}" --work-tree="${workspacePath}" status --porcelain`);
+			const { stdout: status } = await execFileAsync('git', ['--git-dir', this._backupRepoPath, '--work-tree', workspacePath, 'status', '--porcelain']);
 
 			// Always create a checkpoint, even if no files changed
 			let actualMessage;
@@ -1585,8 +1611,8 @@ class ClaudeChatProvider {
 			}
 
 			// Create commit with --allow-empty to ensure checkpoint is always created
-			await exec(`git --git-dir="${this._backupRepoPath}" --work-tree="${workspacePath}" commit --allow-empty -m "${actualMessage}"`);
-			const { stdout: sha } = await exec(`git --git-dir="${this._backupRepoPath}" rev-parse HEAD`);
+			await execFileAsync('git', ['--git-dir', this._backupRepoPath, '--work-tree', workspacePath, 'commit', '--allow-empty', '-m', actualMessage]);
+			const { stdout: sha } = await execFileAsync('git', ['--git-dir', this._backupRepoPath, 'rev-parse', 'HEAD']);
 
 			// Store commit info
 			const commitInfo = {
@@ -1636,7 +1662,7 @@ class ClaudeChatProvider {
 			});
 
 			// Restore files directly to workspace using git checkout
-			await exec(`git --git-dir="${this._backupRepoPath}" --work-tree="${workspacePath}" checkout ${commitSha} -- .`);
+			await execFileAsync('git', ['--git-dir', this._backupRepoPath, '--work-tree', workspacePath, 'checkout', commitSha, '--', '.']);
 
 			vscode.window.showInformationMessage(`Restored to commit: ${commit.message}`);
 
@@ -1736,7 +1762,9 @@ class ClaudeChatProvider {
 	private async _isToolPreApproved(toolName: string, input: Record<string, unknown>): Promise<boolean> {
 		try {
 			const storagePath = this._context.storageUri?.fsPath;
-			if (!storagePath) return false;
+			if (!storagePath) {
+				return false;
+			}
 
 			const permissionsUri = vscode.Uri.file(path.join(storagePath, 'permissions', 'permissions.json'));
 			let permissions: any = { alwaysAllow: {} };
@@ -1776,7 +1804,9 @@ class ClaudeChatProvider {
 	 * Check if a command matches a permission pattern (supports * wildcard)
 	 */
 	private _matchesPattern(command: string, pattern: string): boolean {
-		if (pattern === command) return true;
+		if (pattern === command) {
+			return true;
+		}
 
 		// Handle wildcard patterns like "npm install *"
 		if (pattern.endsWith(' *')) {
@@ -2006,7 +2036,9 @@ class ClaudeChatProvider {
 	private async _saveLocalPermission(toolName: string, input: Record<string, unknown>): Promise<void> {
 		try {
 			const storagePath = this._context.storageUri?.fsPath;
-			if (!storagePath) return;
+			if (!storagePath) {
+				return;
+			}
 
 			// Ensure permissions directory exists
 			const permissionsDir = path.join(storagePath, 'permissions');
@@ -2054,7 +2086,9 @@ class ClaudeChatProvider {
 
 	private getCommandPattern(command: string): string {
 		const parts = command.trim().split(/\s+/);
-		if (parts.length === 0) return command;
+		if (parts.length === 0) {
+			return command;
+		}
 
 		const baseCmd = parts[0];
 		const subCmd = parts.length > 1 ? parts[1] : '';
@@ -2183,7 +2217,9 @@ class ClaudeChatProvider {
 	private async _removePermission(toolName: string, command: string | null): Promise<void> {
 		try {
 			const storagePath = this._context.storageUri?.fsPath;
-			if (!storagePath) return;
+			if (!storagePath) {
+				return;
+			}
 
 			const permissionsUri = vscode.Uri.file(path.join(storagePath, 'permissions', 'permissions.json'));
 			let permissions: any = { alwaysAllow: {} };
@@ -2229,7 +2265,9 @@ class ClaudeChatProvider {
 	private async _addPermission(toolName: string, command: string | null): Promise<void> {
 		try {
 			const storagePath = this._context.storageUri?.fsPath;
-			if (!storagePath) return;
+			if (!storagePath) {
+				return;
+			}
 
 			const permissionsUri = vscode.Uri.file(path.join(storagePath, 'permissions', 'permissions.json'));
 			let permissions: any = { alwaysAllow: {} };
@@ -2678,20 +2716,22 @@ class ClaudeChatProvider {
 			try {
 				// Kill all node/claude processes started by this session inside WSL
 				const killSignal = signal === 'SIGKILL' ? '-9' : '-15';
-				await exec(`wsl -d ${this._wslDistro} pkill ${killSignal} -f "claude"`);
+				if (this._wslDistro) {
+					await execFileAsync('wsl', ['-d', this._wslDistro, '--', 'pkill', killSignal, '-f', 'claude']);
+				}
 			} catch {
 				// Process may already be dead or pkill not available
 			}
 			// Also kill the Windows-side wsl process
 			try {
-				await exec(`taskkill /pid ${pid} /t /f`);
+				await execFileAsync('taskkill', ['/pid', String(pid), '/t', '/f']);
 			} catch {
 				// Process may already be dead
 			}
 		} else if (process.platform === 'win32') {
 			// Windows: Use taskkill with /T flag for tree kill
 			try {
-				await exec(`taskkill /pid ${pid} /t /f`);
+				await execFileAsync('taskkill', ['/pid', String(pid), '/t', '/f']);
 			} catch {
 				// Process may already be dead
 			}
@@ -2841,7 +2881,7 @@ class ClaudeChatProvider {
 					type: 'sessionCleared'
 				});
 
-				let requestStartTime: number
+				let requestStartTime: number;
 
 				// Small delay to ensure messages are cleared before loading new ones
 				setTimeout(() => {
@@ -2876,9 +2916,9 @@ class ClaudeChatProvider {
 						});
 						if (message.messageType === 'userInput') {
 							try {
-								requestStartTime = new Date(message.timestamp).getTime()
+								requestStartTime = new Date(message.timestamp).getTime();
 							} catch (e) {
-								console.log(e)
+								console.log(e);
 							}
 						}
 					}
@@ -2921,8 +2961,9 @@ class ClaudeChatProvider {
 		}
 	}
 
-	private _getHtmlForWebview(): string {
-		return getHtml(vscode.env?.isTelemetryEnabled);
+	private _getHtmlForWebview(webview: vscode.Webview): string {
+		const nonce = getNonce();
+		return getHtml(Boolean(vscode.env?.isTelemetryEnabled), nonce, webview.cspSource);
 	}
 
 	private _sendCurrentSettings(): void {
@@ -3031,13 +3072,19 @@ class ClaudeChatProvider {
 		}
 
 		// Create terminal with the claude /model command
-		const terminal = vscode.window.createTerminal({
-			name: 'Claude Model Selection',
-			location: { viewColumn: vscode.ViewColumn.One }
-		});
+		let terminal: vscode.Terminal;
 		if (wslEnabled) {
-			terminal.sendText(`wsl -d ${wslDistro} ${nodePath} --no-warnings --enable-source-maps ${claudePath} ${args.join(' ')}`);
+			terminal = vscode.window.createTerminal({
+				name: 'Claude Model Selection',
+				location: { viewColumn: vscode.ViewColumn.One },
+				shellPath: 'wsl',
+				shellArgs: ['-d', wslDistro, '--', nodePath, '--no-warnings', '--enable-source-maps', claudePath, ...args],
+			});
 		} else {
+			terminal = vscode.window.createTerminal({
+				name: 'Claude Model Selection',
+				location: { viewColumn: vscode.ViewColumn.One }
+			});
 			terminal.sendText(`claude ${args.join(' ')}`);
 		}
 		terminal.show();
@@ -3061,11 +3108,6 @@ class ClaudeChatProvider {
 		const wslEnabled = config.get<boolean>('wsl.enabled', false);
 		const wslDistro = config.get<string>('wsl.distro', 'Ubuntu');
 
-		const terminal = vscode.window.createTerminal({
-			name: 'Claude Usage',
-			location: { viewColumn: vscode.ViewColumn.One }
-		});
-
 		let command: string;
 		if (usageType === 'plan') {
 			// Plan users get live usage view
@@ -3075,53 +3117,79 @@ class ClaudeChatProvider {
 			command = 'npx -y ccusage blocks --recent --order desc';
 		}
 
+		const terminalOptions: vscode.TerminalOptions = {
+			name: 'Claude Usage',
+			location: { viewColumn: vscode.ViewColumn.One }
+		};
+
 		if (wslEnabled) {
-			terminal.sendText(`wsl -d ${wslDistro} bash -ic "${command}"`);
+			terminalOptions.shellPath = 'wsl';
+			terminalOptions.shellArgs = ['-d', wslDistro, '--', 'bash', '-ic', command];
 		} else {
-			terminal.sendText(command);
+			// Command runs in the user's configured terminal shell
 		}
 
+		const terminal = vscode.window.createTerminal(terminalOptions);
+		if (!wslEnabled) {
+			terminal.sendText(command);
+		}
 		terminal.show();
 	}
 
 	private _runInstallCommand(): void {
-		const { exec } = require('child_process');
+		void vscode.window.showWarningMessage(
+			'This will run a command to install the Claude Code CLI on your machine.',
+			{ modal: true },
+			'Install',
+			'Cancel'
+		).then((choice) => {
+			if (choice !== 'Install') {
+				this._postMessage({
+					type: 'installComplete',
+					success: false,
+					error: 'Installation cancelled'
+				});
+				return;
+			}
 
-		// Check if npm exists and node >= 18
-		exec('node --version', { shell: true }, (nodeErr: Error | null, nodeStdout: string) => {
-			let useNpm = false;
+			const { exec } = require('child_process');
 
-			if (!nodeErr && nodeStdout) {
-				// Parse version (e.g., "v18.17.0" -> 18)
-				const match = nodeStdout.trim().match(/^v(\d+)/);
-				if (match && parseInt(match[1], 10) >= 18) {
-					useNpm = true;
+			// Check if npm exists and node >= 18
+			exec('node --version', { shell: true }, (nodeErr: Error | null, nodeStdout: string) => {
+				let useNpm = false;
+
+				if (!nodeErr && nodeStdout) {
+					// Parse version (e.g., "v18.17.0" -> 18)
+					const match = nodeStdout.trim().match(/^v(\d+)/);
+					if (match && parseInt(match[1], 10) >= 18) {
+						useNpm = true;
+					}
 				}
-			}
 
-			let command: string;
-			if (useNpm) {
-				command = 'npm install -g @anthropic-ai/claude-code';
-			} else if (process.platform === 'win32') {
-				command = 'irm https://claude.ai/install.ps1 | iex';
-			} else {
-				command = 'curl -fsSL https://claude.ai/install.sh | sh';
-			}
-
-			// Run installation silently in the background
-			exec(command, { shell: true }, (error: Error | null, stdout: string, stderr: string) => {
-				if (error) {
-					this._postMessage({
-						type: 'installComplete',
-						success: false,
-						error: stderr || error.message
-					});
+				let command: string;
+				if (useNpm) {
+					command = 'npm install -g @anthropic-ai/claude-code';
+				} else if (process.platform === 'win32') {
+					command = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"irm https://claude.ai/install.ps1 | iex\"';
 				} else {
-					this._postMessage({
-						type: 'installComplete',
-						success: true
-					});
+					command = 'curl -fsSL https://claude.ai/install.sh | sh';
 				}
+
+				// Run installation silently in the background
+				exec(command, { shell: true }, (error: Error | null, stdout: string, stderr: string) => {
+					if (error) {
+						this._postMessage({
+							type: 'installComplete',
+							success: false,
+							error: stderr || error.message
+						});
+					} else {
+						this._postMessage({
+							type: 'installComplete',
+							success: true
+						});
+					}
+				});
 			});
 		});
 	}
@@ -3148,13 +3216,19 @@ class ClaudeChatProvider {
 		}
 
 		// Create terminal with the claude command
-		const terminal = vscode.window.createTerminal({
-			name: `Claude /${command}`,
-			location: { viewColumn: vscode.ViewColumn.One }
-		});
+		let terminal: vscode.Terminal;
 		if (wslEnabled) {
-			terminal.sendText(`wsl -d ${wslDistro} ${nodePath} --no-warnings --enable-source-maps ${claudePath} ${args.join(' ')}`);
+			terminal = vscode.window.createTerminal({
+				name: `Claude /${command}`,
+				location: { viewColumn: vscode.ViewColumn.One },
+				shellPath: 'wsl',
+				shellArgs: ['-d', wslDistro, '--', nodePath, '--no-warnings', '--enable-source-maps', claudePath, ...args],
+			});
 		} else {
+			terminal = vscode.window.createTerminal({
+				name: `Claude /${command}`,
+				location: { viewColumn: vscode.ViewColumn.One }
+			});
 			terminal.sendText(`claude ${args.join(' ')}`);
 		}
 		terminal.show();

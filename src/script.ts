@@ -1,4 +1,4 @@
-const getScript = (isTelemetryEnabled: boolean) => `<script>
+const getScript = (isTelemetryEnabled: boolean, nonce: string) => `<script nonce="${nonce}">
 		const vscode = acquireVsCodeApi();
 		const messagesDiv = document.getElementById('messages');
 		const messageInput = document.getElementById('messageInput');
@@ -17,6 +17,281 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 		let thinkingModeEnabled = false;
 		let lastPendingEditIndex = -1; // Track the last Edit/MultiEdit/Write toolUse without result
 		let lastPendingEditData = null; // Store diff data for the pending edit { filePath, oldContent, newContent }
+
+		const POPULAR_MCP_SERVERS = {
+			context7: { type: 'http', url: 'https://context7.liam.sh/mcp' },
+			'sequential-thinking': { type: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-sequential-thinking'] },
+			memory: { type: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-memory'] },
+			puppeteer: { type: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-puppeteer'] },
+			fetch: { type: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-fetch'] },
+			filesystem: { type: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem'] },
+		};
+
+		function handleActionClick(event) {
+			const target = event.target;
+			if (!(target instanceof Element)) return;
+
+			const actionEl = target.closest('[data-action]');
+			if (!actionEl) return;
+
+			const action = actionEl.getAttribute('data-action');
+			if (!action) return;
+
+			// Links should never navigate in the webview
+			if (actionEl.tagName === 'A') {
+				event.preventDefault();
+			}
+
+			try {
+				switch (action) {
+					case 'switchTab':
+						switchTab(actionEl.getAttribute('data-tab'));
+						break;
+					case 'toggleAgentPanel':
+						toggleAgentPanel();
+						break;
+					case 'selectAgentFromPanel': {
+						const agentId = actionEl.getAttribute('data-agent-id');
+						if (agentId) selectAgentFromPanel(agentId);
+						break;
+					}
+					case 'selectAgentAndSwitch': {
+						const agentId = actionEl.getAttribute('data-agent-id');
+						if (agentId) selectAgentAndSwitch(agentId);
+						break;
+					}
+					case 'toggleConversationHistory':
+						toggleConversationHistory();
+						break;
+					case 'toggleSettings':
+						toggleSettings();
+						break;
+					case 'hideSettingsModal':
+						hideSettingsModal();
+						break;
+					case 'openWSLSettings':
+						openWSLSettings();
+						break;
+					case 'dismissWSLAlert':
+						dismissWSLAlert();
+						break;
+					case 'showModelSelector':
+						showModelSelector();
+						break;
+					case 'hideModelModal':
+						hideModelModal();
+						break;
+					case 'openModelTerminal':
+						openModelTerminal();
+						break;
+					case 'showMCPModal':
+						showMCPModal();
+						break;
+					case 'hideMCPModal':
+						hideMCPModal();
+						break;
+					case 'showAddServerForm':
+						showAddServerForm();
+						break;
+					case 'hideAddServerForm':
+						hideAddServerForm();
+						break;
+					case 'saveMCPServer':
+						saveMCPServer();
+						break;
+					case 'addPopularServer': {
+						const serverId = actionEl.getAttribute('data-server-id');
+						if (!serverId) break;
+						const config = POPULAR_MCP_SERVERS[serverId];
+						if (!config) break;
+						addPopularServer(serverId, config);
+						break;
+					}
+					case 'triggerSlashCommands':
+						showSlashCommandsModal();
+						break;
+					case 'hideSlashCommandsModal':
+						hideSlashCommandsModal();
+						break;
+					case 'showAddSnippetForm':
+						showAddSnippetForm();
+						break;
+					case 'hideAddSnippetForm':
+						hideAddSnippetForm();
+						break;
+					case 'saveCustomSnippet':
+						saveCustomSnippet();
+						break;
+					case 'usePromptSnippet': {
+						const snippetId = actionEl.getAttribute('data-snippet-id');
+						if (snippetId) usePromptSnippet(snippetId);
+						break;
+					}
+					case 'executeSlashCommand': {
+						const command = actionEl.getAttribute('data-command');
+						if (command) executeSlashCommand(command);
+						break;
+					}
+					case 'hideThinkingIntensityModal':
+						hideThinkingIntensityModal();
+						break;
+					case 'setThinkingIntensityValue': {
+						const value = actionEl.getAttribute('data-intensity');
+						if (value !== null) setThinkingIntensityValue(parseInt(value, 10));
+						break;
+					}
+					case 'confirmThinkingIntensity':
+						confirmThinkingIntensity();
+						break;
+					case 'hideInstallModal':
+						hideInstallModal();
+						break;
+					case 'startInstallation':
+						startInstallation();
+						break;
+					case 'newSession':
+						newSession();
+						break;
+					case 'sendMessage':
+						sendMessage();
+						break;
+					case 'stopRequest':
+						stopRequest();
+						break;
+					case 'showFilePicker':
+						showFilePicker();
+						break;
+					case 'selectImage':
+						selectImage();
+						break;
+					case 'showAddPermissionForm':
+						showAddPermissionForm();
+						break;
+					case 'addPermission':
+						addPermission();
+						break;
+					case 'setEditMode':
+						setEditMode(actionEl.getAttribute('data-mode'));
+						break;
+					case 'selectModel':
+						selectModel(actionEl.getAttribute('data-model'));
+						break;
+					case 'viewUsage': {
+						const usageType = actionEl.getAttribute('data-usage-type');
+						if (usageType) viewUsage(usageType);
+						break;
+					}
+					case 'openFileInEditor': {
+						const filePath = actionEl.getAttribute('data-file-path');
+						if (filePath) openFileInEditor(filePath);
+						break;
+					}
+					case 'toggleResultExpansion': {
+						const resultId = actionEl.getAttribute('data-result-id');
+						if (resultId) toggleResultExpansion(resultId, actionEl);
+						break;
+					}
+					case 'toggleDiffExpansion': {
+						const diffId = actionEl.getAttribute('data-diff-id');
+						if (diffId) toggleDiffExpansion(diffId, actionEl);
+						break;
+					}
+					case 'openDiffEditor':
+						openDiffEditor();
+						break;
+					case 'toggleExpand':
+						toggleExpand(actionEl);
+						break;
+					case 'copyCodeBlock': {
+						const codeId = actionEl.getAttribute('data-code-id');
+						if (codeId) copyCodeBlock(codeId);
+						break;
+					}
+					case 'editMCPServer': {
+						const name = actionEl.getAttribute('data-server-name');
+						const configJson = actionEl.getAttribute('data-server-config');
+						if (!name || !configJson) break;
+						editMCPServer(name, JSON.parse(configJson));
+						break;
+					}
+					case 'deleteMCPServer': {
+						const name = actionEl.getAttribute('data-server-name');
+						if (name) deleteMCPServer(name);
+						break;
+					}
+					case 'deleteCustomSnippet': {
+						const snippetId = actionEl.getAttribute('data-snippet-id');
+						if (snippetId) deleteCustomSnippet(snippetId);
+						break;
+					}
+					case 'togglePermissionMenu': {
+						const permissionId = actionEl.getAttribute('data-permission-id');
+						if (permissionId) togglePermissionMenu(permissionId);
+						break;
+					}
+					case 'enableYoloMode': {
+						const permissionId = actionEl.getAttribute('data-permission-id') || undefined;
+						enableYoloMode(permissionId);
+						break;
+					}
+					case 'respondToPermission': {
+						const permissionId = actionEl.getAttribute('data-permission-id');
+						if (!permissionId) break;
+						const approved = actionEl.getAttribute('data-approved') === 'true';
+						const alwaysAllow = actionEl.getAttribute('data-always-allow') === 'true';
+						respondToPermission(permissionId, approved, alwaysAllow);
+						break;
+					}
+					case 'restoreToCommit': {
+						const commitSha = actionEl.getAttribute('data-commit-sha');
+						if (commitSha) restoreToCommit(commitSha);
+						break;
+					}
+					case 'removePermission': {
+						const toolName = actionEl.getAttribute('data-tool-name');
+						const command = actionEl.getAttribute('data-command');
+						const normalizedCommand = command === null || command === '' ? null : command;
+						if (toolName) removePermission(toolName, normalizedCommand);
+						break;
+					}
+				}
+			} catch (error) {
+				console.error('Error handling action:', action, error);
+			}
+		}
+
+		document.addEventListener('click', handleActionClick);
+
+		// Inline event handlers are blocked by CSP; bind non-click listeners here instead.
+		function bindListener(id, eventName, handler, options) {
+			const el = document.getElementById(id);
+			if (!el) return;
+			el.addEventListener(eventName, handler, options);
+		}
+
+		bindListener('serverType', 'change', updateServerForm);
+
+		bindListener('wsl-enabled', 'change', updateSettings);
+		bindListener('wsl-distro', 'change', updateSettings);
+		bindListener('wsl-node-path', 'change', updateSettings);
+		bindListener('wsl-claude-path', 'change', updateSettings);
+		bindListener('yolo-mode', 'change', () => {
+			updateSettings();
+			updateYoloWarning();
+		});
+
+		bindListener('addPermissionTool', 'change', toggleCommandInput);
+
+		bindListener('thinkingIntensitySlider', 'input', (e) => {
+			const target = e.target;
+			if (target && typeof target.value !== 'undefined') {
+				updateThinkingIntensityDisplay(target.value);
+			}
+		});
+
+		bindListener('slashCommandsSearch', 'input', filterSlashCommands);
+		bindListener('customCommandInput', 'keydown', handleCustomCommandKeydown);
+		bindListener('customCommandInput', 'click', (e) => e.stopPropagation());
 
 		// Open diff using stored data (no file read needed)
 		function openDiffEditor() {
@@ -119,7 +394,7 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 					<div class="yolo-suggestion-text">
 						<span>💡 This looks like a permission issue. You can enable Yolo Mode to skip all permission checks.</span>
 					</div>
-					<button class="yolo-suggestion-btn" onclick="enableYoloMode()">Enable Yolo Mode</button>
+					<button class="yolo-suggestion-btn" data-action="enableYoloMode">Enable Yolo Mode</button>
 				\`;
 				messageDiv.appendChild(yoloSuggestion);
 			}
@@ -167,13 +442,13 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 				
 				// Handle TodoWrite specially or format raw input
 				if (data.toolName === 'TodoWrite' && data.rawInput.todos) {
-					let todoHtml = 'Todo List Update:';
+					let todoText = 'Todo List Update:';
 					for (const todo of data.rawInput.todos) {
 						const status = todo.status === 'completed' ? '✅' :
 							todo.status === 'in_progress' ? '🔄' : '⏳';
-						todoHtml += '\\n' + status + ' ' + todo.content;
+						todoText += '\\n' + status + ' ' + (todo.content || '');
 					}
-					contentDiv.innerHTML = todoHtml;
+					contentDiv.textContent = todoText;
 				} else {
 					// Format raw input with expandable content for long values
 					// Use diff format for Edit, MultiEdit, and Write tools, regular format for others
@@ -254,7 +529,7 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 
 		function createExpandableInput(toolInput, rawInput) {
 			try {
-				let html = toolInput.replace(/\\[expand\\]/g, '<span class="expand-btn" onclick="toggleExpand(this)">expand</span>');
+				let html = toolInput.replace(/\\[expand\\]/g, '<span class="expand-btn" data-action="toggleExpand" data-expanded="false">expand</span>');
 				
 				// Store raw input data for expansion
 				if (rawInput && typeof rawInput === 'object') {
@@ -264,9 +539,10 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 						const key = keys[btnIndex] || '';
 						const value = rawInput[key] || '';
 						const valueStr = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
-						const escapedValue = valueStr.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+						const encodedKey = encodeURIComponent(key);
+						const encodedValue = encodeURIComponent(valueStr);
 						btnIndex++;
-						return \`<span class="expand-btn" data-key="\${key}" data-value="\${escapedValue}" onclick="toggleExpand(this)">expand</span>\`;
+						return \`<span class="expand-btn" data-action="toggleExpand" data-key="\${encodedKey}" data-value="\${encodedValue}" data-expanded="false">expand</span>\`;
 					});
 				}
 				
@@ -390,7 +666,7 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 					<div class="yolo-suggestion-text">
 						<span>💡 This looks like a permission issue. You can enable Yolo Mode to skip all permission checks.</span>
 					</div>
-					<button class="yolo-suggestion-btn" onclick="enableYoloMode()">Enable Yolo Mode</button>
+					<button class="yolo-suggestion-btn" data-action="enableYoloMode">Enable Yolo Mode</button>
 				\`;
 				messageDiv.appendChild(yoloSuggestion);
 			}
@@ -401,7 +677,11 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 		}
 
 		function formatToolInputUI(input) {
-			if (!input || typeof input !== 'object') {
+			if (input === null || input === undefined) {
+				return '';
+			}
+
+			if (typeof input !== 'object') {
 				const str = String(input);
 				if (str.length > 100) {
 					const truncateAt = 97;
@@ -412,21 +692,24 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 						   '<span id="' + inputId + '_ellipsis">...</span>' +
 						   '<span id="' + inputId + '_hidden" style="display: none;">' + escapeHtml(str.substring(truncateAt)) + '</span>' +
 						   '<div class="diff-expand-container">' +
-						   '<button class="diff-expand-btn" onclick="toggleResultExpansion(\\\'' + inputId + '\\\')">Show more</button>' +
+						   '<button class="diff-expand-btn" data-action="toggleResultExpansion" data-result-id="' + inputId + '">Show more</button>' +
 						   '</div>';
 				}
-				return str;
+				return escapeHtml(str);
 			}
 
 			// Special handling for Read tool with file_path
 			if (input.file_path && Object.keys(input).length === 1) {
-				const formattedPath = formatFilePath(input.file_path);
-				return '<div class="diff-file-path" onclick="openFileInEditor(\\\'' + escapeHtml(input.file_path) + '\\\')">' + formattedPath + '</div>';
+				const filePath = String(input.file_path);
+				const formattedPath = formatFilePath(filePath);
+				return '<div class="diff-file-path" data-action="openFileInEditor" data-file-path="' + escapeHtml(filePath) + '">' + formattedPath + '</div>';
 			}
 
 			let result = '';
 			let isFirst = true;
 			for (const [key, value] of Object.entries(input)) {
+				const encodedKey = encodeURIComponent(key);
+				const safeKey = escapeHtml(key);
 				const valueStr = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
 				
 				if (!isFirst) result += '\\n';
@@ -435,13 +718,13 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 				// Special formatting for file_path in Read tool context
 				if (key === 'file_path') {
 					const formattedPath = formatFilePath(valueStr);
-					result += '<div class="diff-file-path" onclick="openFileInEditor(\\\'' + escapeHtml(valueStr) + '\\\')">' + formattedPath + '</div>';
+					result += '<div class="diff-file-path" data-action="openFileInEditor" data-file-path="' + escapeHtml(valueStr) + '">' + formattedPath + '</div>';
 				} else if (valueStr.length > 100) {
-					const truncated = valueStr.substring(0, 97) + '...';
-					const escapedValue = valueStr.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-					result += '<span class="expandable-item"><strong>' + key + ':</strong> ' + truncated + ' <span class="expand-btn" data-key="' + key + '" data-value="' + escapedValue + '" onclick="toggleExpand(this)">expand</span></span>';
+					const truncated = escapeHtml(valueStr.substring(0, 97)) + '...';
+					const encodedValue = encodeURIComponent(valueStr);
+					result += '<span class="expandable-item"><strong>' + safeKey + ':</strong> ' + truncated + ' <span class="expand-btn" data-action="toggleExpand" data-key="' + encodedKey + '" data-value="' + encodedValue + '" data-expanded="false">expand</span></span>';
 				} else {
-					result += '<strong>' + key + ':</strong> ' + valueStr;
+					result += '<strong>' + safeKey + ':</strong> ' + escapeHtml(valueStr);
 				}
 			}
 			return result;
@@ -523,7 +806,7 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 
 			// Header with file path
 			html += '<div class="diff-file-header">';
-			html += '<div class="diff-file-path" onclick="openFileInEditor(\\\'' + escapeHtml(filePath) + '\\\')">' + formattedPath + '</div>';
+			html += '<div class="diff-file-path" data-action="openFileInEditor" data-file-path="' + escapeHtml(filePath) + '">' + formattedPath + '</div>';
 			html += '</div>\\n';
 
 			// Calculate line range
@@ -593,7 +876,7 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 
 				// Add expand button
 				html += '<div class="diff-expand-container">';
-				html += '<button class="diff-expand-btn" onclick="toggleDiffExpansion(\\'' + diffId + '\\')">Show ' + hiddenLines.length + ' more lines</button>';
+				html += '<button class="diff-expand-btn" data-action="toggleDiffExpansion" data-diff-id="' + diffId + '">Show ' + hiddenLines.length + ' more lines</button>';
 				html += '</div>';
 			}
 
@@ -613,7 +896,7 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 				html += '<div class="diff-summary-row">';
 				html += '<span class="diff-summary">Summary: ' + summary + '</span>';
 				if (showButton) {
-					html += '<button class="diff-open-btn" onclick="openDiffEditor()" title="Open side-by-side diff in VS Code">';
+					html += '<button class="diff-open-btn" data-action="openDiffEditor" title="Open side-by-side diff in VS Code">';
 					html += '<svg width="14" height="14" viewBox="0 0 16 16"><rect x="1" y="1" width="6" height="14" rx="1" fill="none" stroke="currentColor" stroke-opacity="0.5"/><rect x="9" y="1" width="6" height="14" rx="1" fill="none" stroke="currentColor" stroke-opacity="0.5"/><line x1="2.5" y1="4" x2="5.5" y2="4" stroke="#e8a0a0" stroke-width="1.5"/><line x1="2.5" y1="7" x2="5.5" y2="7" stroke="currentColor" stroke-opacity="0.4" stroke-width="1.5"/><line x1="2.5" y1="10" x2="5.5" y2="10" stroke="currentColor" stroke-opacity="0.4" stroke-width="1.5"/><line x1="10.5" y1="4" x2="13.5" y2="4" stroke="currentColor" stroke-opacity="0.4" stroke-width="1.5"/><line x1="10.5" y1="7" x2="13.5" y2="7" stroke="#8fd48f" stroke-width="1.5"/><line x1="10.5" y1="10" x2="13.5" y2="10" stroke="#8fd48f" stroke-width="1.5"/></svg>';
 					html += 'Open Diff</button>';
 				}
@@ -660,7 +943,7 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 			// Show full diffs for each edit
 			const formattedPath = formatFilePath(input.file_path);
 			let html = '<div class="diff-file-header">';
-			html += '<div class="diff-file-path" onclick="openFileInEditor(\\\'' + escapeHtml(input.file_path) + '\\\')">' + formattedPath + '</div>';
+			html += '<div class="diff-file-path" data-action="openFileInEditor" data-file-path="' + escapeHtml(input.file_path) + '">' + formattedPath + '</div>';
 			html += '</div>\\n';
 
 			input.edits.forEach((edit, index) => {
@@ -712,7 +995,7 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 			html += '<div class="diff-summary-row">';
 			html += '<span class="diff-summary">Summary: ' + input.edits.length + ' edit' + (input.edits.length > 1 ? 's' : '') + '</span>';
 			if (showButton) {
-				html += '<button class="diff-open-btn" onclick="openDiffEditor()" title="Open side-by-side diff in VS Code">';
+				html += '<button class="diff-open-btn" data-action="openDiffEditor" title="Open side-by-side diff in VS Code">';
 				html += '<svg width="14" height="14" viewBox="0 0 16 16"><rect x="1" y="1" width="6" height="14" rx="1" fill="none" stroke="currentColor" stroke-opacity="0.5"/><rect x="9" y="1" width="6" height="14" rx="1" fill="none" stroke="currentColor" stroke-opacity="0.5"/><line x1="2.5" y1="4" x2="5.5" y2="4" stroke="#e8a0a0" stroke-width="1.5"/><line x1="2.5" y1="7" x2="5.5" y2="7" stroke="currentColor" stroke-opacity="0.4" stroke-width="1.5"/><line x1="2.5" y1="10" x2="5.5" y2="10" stroke="currentColor" stroke-opacity="0.4" stroke-width="1.5"/><line x1="10.5" y1="4" x2="13.5" y2="4" stroke="currentColor" stroke-opacity="0.4" stroke-width="1.5"/><line x1="10.5" y1="7" x2="13.5" y2="7" stroke="#8fd48f" stroke-width="1.5"/><line x1="10.5" y1="10" x2="13.5" y2="10" stroke="#8fd48f" stroke-width="1.5"/></svg>';
 				html += 'Open Diff</button>';
 			}
@@ -740,7 +1023,7 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 
 		function escapeHtml(text) {
 			const div = document.createElement('div');
-			div.textContent = text;
+			div.textContent = text === null || text === undefined ? '' : String(text);
 			return div.innerHTML;
 		}
 
@@ -762,9 +1045,9 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 				   '<span class="file-icon">📄</span>' + escapeHtml(fileName) + '</span>';
 		}
 
-		function toggleDiffExpansion(diffId) {
+		function toggleDiffExpansion(diffId, buttonEl = null) {
 			const hiddenDiv = document.getElementById(diffId + '_hidden');
-			const button = document.querySelector('[onclick*="' + diffId + '"]');
+			const button = buttonEl || document.querySelector('[data-action="toggleDiffExpansion"][data-diff-id="' + diffId + '"]');
 			
 			if (hiddenDiv && button) {
 				if (hiddenDiv.style.display === 'none') {
@@ -778,10 +1061,10 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 			}
 		}
 
-		function toggleResultExpansion(resultId) {
+		function toggleResultExpansion(resultId, buttonEl = null) {
 			const hiddenDiv = document.getElementById(resultId + '_hidden');
 			const ellipsis = document.getElementById(resultId + '_ellipsis');
-			const button = document.querySelector('[onclick*="toggleResultExpansion(\\'' + resultId + '\\\')"]');
+			const button = buttonEl || document.querySelector('[data-action="toggleResultExpansion"][data-result-id="' + resultId + '"]');
 			
 			if (hiddenDiv && button) {
 				if (hiddenDiv.style.display === 'none') {
@@ -796,44 +1079,42 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 			}
 		}
 
-		function toggleExpand(button) {
-			const key = button.getAttribute('data-key');
-			const value = button.getAttribute('data-value');
-			
-			// Find the container that holds just this key-value pair
-			let container = button.parentNode;
-			while (container && !container.classList.contains('expandable-item')) {
-				container = container.parentNode;
-			}
-			
-			if (!container) {
-				// Fallback: create a wrapper around the current line
-				const parent = button.parentNode;
-				const wrapper = document.createElement('div');
-				wrapper.className = 'expandable-item';
-				parent.insertBefore(wrapper, button.previousSibling || button);
-				
-				// Move the key, value text, and button into the wrapper
-				let currentNode = wrapper.nextSibling;
-				const nodesToMove = [];
-				while (currentNode && currentNode !== button.nextSibling) {
-					nodesToMove.push(currentNode);
-					currentNode = currentNode.nextSibling;
-				}
-				nodesToMove.forEach(node => wrapper.appendChild(node));
-				container = wrapper;
-			}
-			
-			if (button.textContent === 'expand') {
-				// Show full content
-				const decodedValue = value.replace(/&quot;/g, '"').replace(/&#39;/g, "'");
-				container.innerHTML = '<strong>' + key + ':</strong> ' + decodedValue + ' <span class="expand-btn" data-key="' + key + '" data-value="' + value + '" onclick="toggleExpand(this)">collapse</span>';
-			} else {
-				// Show truncated content
-				const decodedValue = value.replace(/&quot;/g, '"').replace(/&#39;/g, "'");
-				const truncated = decodedValue.substring(0, 97) + '...';
-				container.innerHTML = '<strong>' + key + ':</strong> ' + truncated + ' <span class="expand-btn" data-key="' + key + '" data-value="' + value + '" onclick="toggleExpand(this)">expand</span>';
-			}
+		function toggleExpand(buttonEl) {
+			if (!buttonEl) return;
+
+			const encodedKey = buttonEl.getAttribute('data-key') || '';
+			const encodedValue = buttonEl.getAttribute('data-value') || '';
+			const expanded = buttonEl.getAttribute('data-expanded') === 'true';
+
+			let key = encodedKey;
+			let value = encodedValue;
+			try { key = decodeURIComponent(encodedKey); } catch { /* ignore */ }
+			try { value = decodeURIComponent(encodedValue); } catch { /* ignore */ }
+
+			const container = buttonEl.closest('.expandable-item');
+			if (!container) return;
+
+			const nextExpanded = !expanded;
+			const truncated = value.length > 100 ? (value.substring(0, 97) + '...') : value;
+
+			// Rebuild safely (avoid innerHTML)
+			while (container.firstChild) container.removeChild(container.firstChild);
+
+			const strong = document.createElement('strong');
+			strong.textContent = key + ':';
+			container.appendChild(strong);
+			container.appendChild(document.createTextNode(' '));
+			container.appendChild(document.createTextNode(nextExpanded ? value : truncated));
+			container.appendChild(document.createTextNode(' '));
+
+			const newBtn = document.createElement('span');
+			newBtn.className = 'expand-btn';
+			newBtn.setAttribute('data-action', 'toggleExpand');
+			newBtn.setAttribute('data-key', encodeURIComponent(key));
+			newBtn.setAttribute('data-value', encodeURIComponent(value));
+			newBtn.setAttribute('data-expanded', nextExpanded ? 'true' : 'false');
+			newBtn.textContent = nextExpanded ? 'collapse' : 'expand';
+			container.appendChild(newBtn);
 		}
 
 		function sendMessage() {
@@ -940,6 +1221,40 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 			if (agentPanelOpen) toggleAgentPanel();
 		}
 
+		let editMode = 'ask'; // 'ask' | 'auto' | 'plan' (UI-only for now; plan maps to Claude plan mode)
+
+		function switchTab(tab) {
+			// Tabs are currently a lightweight UI affordance; "Control Panel" is handled by the agent panel.
+			const tabChat = document.getElementById('tabChat');
+			const tabAgents = document.getElementById('tabAgents');
+
+			if (tab === 'chat') {
+				if (tabChat) tabChat.classList.add('active');
+				if (tabAgents) tabAgents.classList.remove('active');
+
+				// If the control panel is open, close it when switching back to chat
+				if (agentPanelOpen) toggleAgentPanel();
+				return;
+			}
+
+			// Fallback: treat any other tab as "Control Panel"
+			if (tabChat) tabChat.classList.remove('active');
+			if (tabAgents) tabAgents.classList.add('active');
+			if (!agentPanelOpen) toggleAgentPanel();
+		}
+
+		function setEditMode(mode) {
+			editMode = mode || 'ask';
+
+			// Claude "plan" mode maps to permission-mode plan (no edits)
+			planModeEnabled = editMode === 'plan';
+
+			// Update UI toggle state
+			document.querySelectorAll('.mode-toggle-option').forEach(btn => {
+				btn.classList.toggle('active', btn.getAttribute('data-mode') === editMode);
+			});
+		}
+
 
 		let totalCost = 0;
 		let totalTokensInput = 0;
@@ -1014,10 +1329,11 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 					// Extract just the plan type (e.g., "Claude Max" -> "Max", "pro" -> "Pro")
 					let planName = subscriptionType.replace(/^claude\\s*/i, '').trim();
 					planName = planName.charAt(0).toUpperCase() + planName.slice(1);
-					usageStr = \`<a href="#" onclick="event.preventDefault(); viewUsage('plan');" class="usage-badge" title="View live usage">\${planName} Plan\${usageIcon}</a>\`;
+					const safePlanName = escapeHtml(planName);
+					usageStr = \`<a href="#" data-action="viewUsage" data-usage-type="plan" class="usage-badge" title="View live usage">\${safePlanName} Plan\${usageIcon}</a>\`;
 				} else {
 					const costStr = totalCost > 0 ? \`$\${totalCost.toFixed(4)}\` : '$0.00';
-					usageStr = \`<a href="#" onclick="event.preventDefault(); viewUsage('api');" class="usage-badge" title="View usage">\${costStr}\${usageIcon}</a>\`;
+					usageStr = \`<a href="#" data-action="viewUsage" data-usage-type="api" class="usage-badge" title="View usage">\${costStr}\${usageIcon}</a>\`;
 				}
 				const tokensStr = totalTokens > 0 ?
 					\`\${totalTokens.toLocaleString()} tokens\` : '0 tokens';
@@ -1609,29 +1925,36 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 					continue;
 				}
 				
-				const serverType = config.type || 'stdio';
+				const serverName = String(name);
+				const serverType = String(config.type || 'stdio');
 				let configDisplay = '';
 				
 				if (serverType === 'stdio') {
-					configDisplay = \`Command: \${config.command || 'Not specified'}\`;
+					const command = config.command ? String(config.command) : 'Not specified';
+					configDisplay = \`Command: \${escapeHtml(command)}\`;
 					if (config.args && Array.isArray(config.args)) {
-						configDisplay += \`<br>Args: \${config.args.join(' ')}\`;
+						configDisplay += \`<br>Args: \${escapeHtml(config.args.join(' '))}\`;
 					}
 				} else if (serverType === 'http' || serverType === 'sse') {
-					configDisplay = \`URL: \${config.url || 'Not specified'}\`;
+					const url = config.url ? String(config.url) : 'Not specified';
+					configDisplay = \`URL: \${escapeHtml(url)}\`;
 				} else {
-					configDisplay = \`Type: \${serverType}\`;
+					configDisplay = \`Type: \${escapeHtml(serverType)}\`;
 				}
+
+				const safeName = escapeHtml(serverName);
+				const safeType = escapeHtml(serverType.toUpperCase());
+				const configJson = escapeHtml(JSON.stringify(config));
 
 				serverItem.innerHTML = \`
 					<div class="server-info">
-						<div class="server-name">\${name}</div>
-						<div class="server-type">\${serverType.toUpperCase()}</div>
+						<div class="server-name">\${safeName}</div>
+						<div class="server-type">\${safeType}</div>
 						<div class="server-config">\${configDisplay}</div>
 					</div>
 					<div class="server-actions">
-						<button class="btn outlined server-edit-btn" onclick="editMCPServer('\${name}', \${JSON.stringify(config).replace(/"/g, '&quot;')})">Edit</button>
-						<button class="btn outlined server-delete-btn" onclick="deleteMCPServer('\${name}')">Delete</button>
+						<button class="btn outlined server-edit-btn" data-action="editMCPServer" data-server-name="\${safeName}" data-server-config="\${configJson}">Edit</button>
+						<button class="btn outlined server-delete-btn" data-action="deleteMCPServer" data-server-name="\${safeName}">Delete</button>
 					</div>
 				\`;
 				
@@ -1938,18 +2261,22 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 			const addForm = document.getElementById('addSnippetForm');
 			
 			Object.values(snippetsData).forEach(snippet => {
+				const snippetId = String(snippet?.id || '');
+				const safeName = escapeHtml(String(snippet?.name || ''));
+				const safePrompt = escapeHtml(String(snippet?.prompt || ''));
 				const snippetElement = document.createElement('div');
 				snippetElement.className = 'slash-command-item prompt-snippet-item custom-snippet-item';
-				snippetElement.onclick = () => usePromptSnippet(snippet.id);
+				snippetElement.setAttribute('data-action', 'usePromptSnippet');
+				snippetElement.setAttribute('data-snippet-id', snippetId);
 				
 				snippetElement.innerHTML = \`
 					<div class="slash-command-icon">📝</div>
 					<div class="slash-command-content">
-						<div class="slash-command-title">/\${snippet.name}</div>
-						<div class="slash-command-description">\${snippet.prompt}</div>
+						<div class="slash-command-title">/\${safeName}</div>
+						<div class="slash-command-description">\${safePrompt}</div>
 					</div>
 					<div class="snippet-actions">
-						<button class="snippet-delete-btn" onclick="event.stopPropagation(); deleteCustomSnippet('\${snippet.id}')" title="Delete snippet">🗑️</button>
+						<button class="snippet-delete-btn" data-action="deleteCustomSnippet" data-snippet-id="\${escapeHtml(snippetId)}" title="Delete snippet">🗑️</button>
 					</div>
 				\`;
 				
@@ -2469,19 +2796,21 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 			messageDiv.id = \`permission-\${data.id}\`;
 			messageDiv.dataset.status = data.status || 'pending';
 
-			const toolName = data.tool || 'Unknown Tool';
+			const toolName = String(data.tool || 'Unknown Tool');
+			const safeToolName = escapeHtml(toolName);
+			const safePermissionId = escapeHtml(String(data.id || ''));
 			const status = data.status || 'pending';
 
 			// Create always allow button text with command styling for Bash
-			let alwaysAllowText = \`Always allow \${toolName}\`;
+			let alwaysAllowText = \`Always allow \${safeToolName}\`;
 			let alwaysAllowTooltip = '';
 			if (toolName === 'Bash' && data.pattern) {
-				const pattern = data.pattern;
+				const pattern = String(data.pattern);
 				// Remove the asterisk for display - show "npm i" instead of "npm i *"
 				const displayPattern = pattern.replace(' *', '');
 				const truncatedPattern = displayPattern.length > 30 ? displayPattern.substring(0, 30) + '...' : displayPattern;
-				alwaysAllowText = \`Always allow <code>\${truncatedPattern}</code>\`;
-				alwaysAllowTooltip = displayPattern.length > 30 ? \`title="\${displayPattern}"\` : '';
+				alwaysAllowText = \`Always allow <code>\${escapeHtml(truncatedPattern)}</code>\`;
+				alwaysAllowTooltip = displayPattern.length > 30 ? \`title="\${escapeHtml(displayPattern)}"\` : '';
 			}
 
 			// Show different content based on status
@@ -2492,9 +2821,9 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 						<span class="icon">🔐</span>
 						<span>Permission Required</span>
 						<div class="permission-menu">
-							<button class="permission-menu-btn" onclick="togglePermissionMenu('\${data.id}')" title="More options">⋮</button>
+							<button class="permission-menu-btn" data-action="togglePermissionMenu" data-permission-id="\${safePermissionId}" title="More options">⋮</button>
 							<div class="permission-menu-dropdown" id="permissionMenu-\${data.id}" style="display: none;">
-								<button class="permission-menu-item" onclick="enableYoloMode('\${data.id}')">
+								<button class="permission-menu-item" data-action="enableYoloMode" data-permission-id="\${safePermissionId}">
 									<span class="menu-icon">⚡</span>
 									<div class="menu-content">
 										<span class="menu-title">Enable YOLO Mode</span>
@@ -2505,11 +2834,11 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 						</div>
 					</div>
 					<div class="permission-content">
-						<p>Allow <strong>\${toolName}</strong> to execute the tool call above?</p>
+						<p>Allow <strong>\${safeToolName}</strong> to execute the tool call above?</p>
 						<div class="permission-buttons">
-							<button class="btn deny" onclick="respondToPermission('\${data.id}', false)">Deny</button>
-							<button class="btn always-allow" onclick="respondToPermission('\${data.id}', true, true)" \${alwaysAllowTooltip}>\${alwaysAllowText}</button>
-							<button class="btn allow" onclick="respondToPermission('\${data.id}', true)">Allow</button>
+							<button class="btn deny" data-action="respondToPermission" data-permission-id="\${safePermissionId}" data-approved="false">Deny</button>
+							<button class="btn always-allow" data-action="respondToPermission" data-permission-id="\${safePermissionId}" data-approved="true" data-always-allow="true" \${alwaysAllowTooltip}>\${alwaysAllowText}</button>
+							<button class="btn allow" data-action="respondToPermission" data-permission-id="\${safePermissionId}" data-approved="true">Allow</button>
 						</div>
 					</div>
 				\`;
@@ -2520,7 +2849,7 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 						<span>Permission Required</span>
 					</div>
 					<div class="permission-content">
-						<p>Allow <strong>\${toolName}</strong> to execute the tool call above?</p>
+						<p>Allow <strong>\${safeToolName}</strong> to execute the tool call above?</p>
 						<div class="permission-decision allowed">✅ You allowed this</div>
 					</div>
 				\`;
@@ -2532,7 +2861,7 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 						<span>Permission Required</span>
 					</div>
 					<div class="permission-content">
-						<p>Allow <strong>\${toolName}</strong> to execute the tool call above?</p>
+						<p>Allow <strong>\${safeToolName}</strong> to execute the tool call above?</p>
 						<div class="permission-decision denied">❌ You denied this</div>
 					</div>
 				\`;
@@ -2544,7 +2873,7 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 						<span>Permission Required</span>
 					</div>
 					<div class="permission-content">
-						<p>Allow <strong>\${toolName}</strong> to execute the tool call above?</p>
+						<p>Allow <strong>\${safeToolName}</strong> to execute the tool call above?</p>
 						<div class="permission-decision expired">⏱️ This request expired</div>
 					</div>
 				\`;
@@ -2708,7 +3037,7 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 			const shortSha = data.sha ? data.sha.substring(0, 8) : 'unknown';
 			
 			restoreContainer.innerHTML = \`
-				<button class="restore-btn dark" onclick="restoreToCommit('\${data.sha}')">
+				<button class="restore-btn dark" data-action="restoreToCommit" data-commit-sha="\${escapeHtml(String(data.sha || ''))}">
 					Restore checkpoint
 				</button>
 				<span class="restore-date">\${timeAgo}</span>
@@ -2781,42 +3110,55 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 		
 
 		function parseSimpleMarkdown(markdown) {
-			// First, handle code blocks before line-by-line processing
-			let processedMarkdown = markdown;
-			
+			let processedMarkdown = markdown === null || markdown === undefined ? '' : String(markdown);
+
 			// Store code blocks temporarily to protect them from further processing
 			const codeBlockPlaceholders = [];
-			
+
 			// Handle multi-line code blocks with triple backticks
 			// Using RegExp constructor to avoid backtick conflicts in template literal
 			const codeBlockRegex = new RegExp('\\\`\\\`\\\`(\\\\w*)\\n([\\\\s\\\\S]*?)\\\`\\\`\\\`', 'g');
 			processedMarkdown = processedMarkdown.replace(codeBlockRegex, function(match, lang, code) {
-				const language = lang || 'plaintext';
+				const languageRaw = lang || 'plaintext';
+				const languageLabel = escapeHtml(languageRaw);
+				const languageClass = String(languageRaw).replace(/[^a-zA-Z0-9_-]/g, '') || 'plaintext';
+
 				// Process code line by line to preserve formatting like diff implementation
-				const codeLines = code.split('\\n');
+				const codeLines = String(code).split('\\n');
 				let codeHtml = '';
-				
+
 				for (const line of codeLines) {
 					const escapedLine = escapeHtml(line);
 					codeHtml += '<div class="code-line">' + escapedLine + '</div>';
 				}
-				
+
 				// Create unique ID for this code block
 				const codeId = 'code_' + Math.random().toString(36).substr(2, 9);
-				const escapedCode = escapeHtml(code);
-				
-				const codeBlockHtml = '<div class="code-block-container"><div class="code-block-header"><span class="code-block-language">' + language + '</span><button class="code-copy-btn" onclick="copyCodeBlock(\\\'' + codeId + '\\\')" title="Copy code"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg></button></div><pre class="code-block"><code class="language-' + language + '" id="' + codeId + '" data-raw-code="' + escapedCode.replace(/"/g, '&quot;') + '">' + codeHtml + '</code></pre></div>';
-				
+				const escapedCode = escapeHtml(String(code));
+
+				const codeBlockHtml = '<div class="code-block-container">' +
+					'<div class="code-block-header">' +
+						'<span class="code-block-language">' + languageLabel + '</span>' +
+						'<button class="code-copy-btn" data-action="copyCodeBlock" data-code-id="' + codeId + '" title="Copy code">' +
+							'<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>' +
+						'</button>' +
+					'</div>' +
+					'<pre class="code-block"><code class="language-' + languageClass + '" id="' + codeId + '" data-raw-code="' + escapedCode.replace(/"/g, '&quot;') + '">' + codeHtml + '</code></pre>' +
+				'</div>';
+
 				// Store the code block and return a placeholder
 				const placeholder = '__CODEBLOCK_' + codeBlockPlaceholders.length + '__';
 				codeBlockPlaceholders.push(codeBlockHtml);
 				return placeholder;
 			});
-			
+
+			// Escape any raw HTML in the markdown (we only re-introduce known-safe tags below)
+			processedMarkdown = escapeHtml(processedMarkdown);
+
 			// Handle inline code with single backticks
 			const inlineCodeRegex = new RegExp('\\\`([^\\\`]+)\\\`', 'g');
 			processedMarkdown = processedMarkdown.replace(inlineCodeRegex, '<code>$1</code>');
-			
+
 			const lines = processedMarkdown.split('\\n');
 			let html = '';
 			let inUnorderedList = false;
@@ -2981,6 +3323,11 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 			fileList.innerHTML = '';
 			
 			filteredFiles.forEach((file, index) => {
+				const fileName = String(file?.name || '');
+				const filePath = String(file?.path || '');
+				const safeFileName = escapeHtml(fileName);
+				const safeFilePath = escapeHtml(filePath);
+
 				const fileItem = document.createElement('div');
 				fileItem.className = 'file-item';
 				if (index === selectedFileIndex) {
@@ -2988,10 +3335,10 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 				}
 				
 				fileItem.innerHTML = \`
-					<span class="file-icon">\${getFileIcon(file.name)}</span>
+					<span class="file-icon">\${getFileIcon(fileName)}</span>
 					<div class="file-info">
-						<div class="file-name">\${file.name}</div>
-						<div class="file-path">\${file.path}</div>
+						<div class="file-name">\${safeFileName}</div>
+						<div class="file-path">\${safeFilePath}</div>
 					</div>
 				\`;
 				
@@ -3088,6 +3435,8 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 
 				const date = new Date(conv.startTime).toLocaleDateString();
 				const time = new Date(conv.startTime).toLocaleTimeString();
+				const firstUserMessage = String(conv.firstUserMessage || '');
+				const lastUserMessage = String(conv.lastUserMessage || '');
 
 				// Show plan type or cost based on subscription
 				let usageStr;
@@ -3096,13 +3445,23 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 					planName = planName.charAt(0).toUpperCase() + planName.slice(1);
 					usageStr = planName;
 				} else {
-					usageStr = \`$\${conv.totalCost.toFixed(3)}\`;
+					const totalCost = typeof conv.totalCost === 'number' ? conv.totalCost : parseFloat(String(conv.totalCost || 0));
+					usageStr = \`$\${(Number.isFinite(totalCost) ? totalCost : 0).toFixed(3)}\`;
 				}
 
+				const title = firstUserMessage.substring(0, 60) + (firstUserMessage.length > 60 ? '...' : '');
+				const preview = lastUserMessage.substring(0, 80) + (lastUserMessage.length > 80 ? '...' : '');
+				const safeTitle = escapeHtml(title);
+				const safePreview = escapeHtml(preview);
+				const safeUsage = escapeHtml(String(usageStr));
+				const safeDate = escapeHtml(String(date));
+				const safeTime = escapeHtml(String(time));
+				const safeMessageCount = escapeHtml(String(conv.messageCount || 0));
+
 				item.innerHTML = \`
-					<div class="conversation-title">\${conv.firstUserMessage.substring(0, 60)}\${conv.firstUserMessage.length > 60 ? '...' : ''}</div>
-					<div class="conversation-meta">\${date} at \${time} • \${conv.messageCount} messages • \${usageStr}</div>
-					<div class="conversation-preview">Last: \${conv.lastUserMessage.substring(0, 80)}\${conv.lastUserMessage.length > 80 ? '...' : ''}</div>
+					<div class="conversation-title">\${safeTitle}</div>
+					<div class="conversation-meta">\${safeDate} at \${safeTime} • \${safeMessageCount} messages • \${safeUsage}</div>
+					<div class="conversation-preview">Last: \${safePreview}</div>
 				\`;
 
 				listDiv.appendChild(item);
@@ -3192,28 +3551,31 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 			let html = '';
 			
 			for (const [toolName, permission] of Object.entries(permissions.alwaysAllow)) {
+				const safeToolName = escapeHtml(String(toolName));
 				if (permission === true) {
 					// Tool is always allowed
 					html += \`
 						<div class="permission-item">
 							<div class="permission-info">
-								<span class="permission-tool">\${toolName}</span>
+								<span class="permission-tool">\${safeToolName}</span>
 								<span class="permission-desc">All</span>
 							</div>
-							<button class="permission-remove-btn" onclick="removePermission('\${toolName}', null)">Remove</button>
+							<button class="permission-remove-btn" data-action="removePermission" data-tool-name="\${safeToolName}" data-command="">Remove</button>
 						</div>
 					\`;
 				} else if (Array.isArray(permission)) {
 					// Tool has specific commands/patterns
 					for (const command of permission) {
 						const displayCommand = command.replace(' *', ''); // Remove asterisk for display
+						const safeDisplayCommand = escapeHtml(displayCommand);
+						const safeCommand = escapeHtml(String(command));
 						html += \`
 							<div class="permission-item">
 								<div class="permission-info">
-									<span class="permission-tool">\${toolName}</span>
-									<span class="permission-command"><code>\${displayCommand}</code></span>
+									<span class="permission-tool">\${safeToolName}</span>
+									<span class="permission-command"><code>\${safeDisplayCommand}</code></span>
 								</div>
-								<button class="permission-remove-btn" onclick="removePermission('\${toolName}', '\${escapeHtml(command)}')">Remove</button>
+								<button class="permission-remove-btn" data-action="removePermission" data-tool-name="\${safeToolName}" data-command="\${safeCommand}">Remove</button>
 							</div>
 						\`;
 					}
@@ -3408,6 +3770,6 @@ const getScript = (isTelemetryEnabled: boolean) => `<script>
 		updateAgentList([{ id: 'main', name: 'Agent 1', status: 'idle' }]);
 		updateAgentHeader('Agent 1', 'idle');
 
-	</script>`
+	</script>`;
 
 export default getScript;
