@@ -1,15 +1,15 @@
 {
-  "name": "claude-code-chat",
-  "displayName": "Chat for Claude Code",
-  "description": "Beautiful Claude Code Chat Interface for VS Code",
-  "version": "1.1.0",
-  "publisher": "AndrePimenta",
-  "author": "Andre Pimenta",
+  "name": "the-control-room",
+  "displayName": "The Control Room",
+  "description": "Multi-Agent Command Center for Claude Code",
+  "version": "0.1.0",
+  "publisher": "Navid",
+  "author": "Navid",
   "repository": {
     "type": "git",
     "url": "https://github.com/andrepimenta/claude-code-chat"
   },
-  "license": "SEE LICENSE IN LICENSE",
+  "license": "MIT",
   "engines": {
     "vscode": "^1.94.0"
   },
@@ -17,33 +17,16 @@
     "Other",
     "AI",
     "Chat",
-    "Machine Learning",
-    "Snippets",
-    "Programming Languages",
-    "Education",
-    "Testing",
-    "Formatters",
-    "Linters"
+    "Machine Learning"
   ],
   "keywords": [
     "claude code",
-    "code explanation",
-    "code generation",
-    "code summary",
-    "code transform",
-    "vibe coding",
-    "prompt language",
-    "copilot",
+    "multi-agent",
+    "control room",
+    "command center",
     "claude",
     "ai",
-    "assistant",
-    "chatbot",
-    "chat",
-    "anthropic",
-    "code",
-    "programming",
-    "development",
-    "productivity"
+    "anthropic"
   ],
   "icon": "icon.png",
   "main": "./out/extension.js",
@@ -54,8 +37,8 @@
     "commands": [
       {
         "command": "claude-code-chat.openChat",
-        "title": "Open Claude Code Chat",
-        "category": "Claude Code Chat",
+        "title": "Open The Control Room",
+        "category": "The Control Room",
         "icon": "icon-bubble.png"
       }
     ],
@@ -131,10 +114,10 @@
         {
           "id": "claude-code-chat.chat",
           "type": "webview",
-          "name": "Claude Code Chat",
+          "name": "The Control Room",
           "when": "true",
           "icon": "icon-bubble.png",
-          "contextualTitle": "Claude Code Chat"
+          "contextualTitle": "The Control Room"
         }
       ]
     },
@@ -142,13 +125,13 @@
       "activitybar": [
         {
           "id": "claude-code-chat",
-          "title": "Claude Code Chat",
+          "title": "The Control Room",
           "icon": "icon-bubble.png"
         }
       ]
     },
     "configuration": {
-      "title": "Claude Code Chat",
+      "title": "The Control Room",
       "properties": {
         "claudeCodeChat.wsl.enabled": {
           "type": "boolean",

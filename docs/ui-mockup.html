@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>The Control Room - UI Mockup</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+    .animate-pulse { animation: pulse 2s infinite; }
+  </style>
+</head>
+<body class="min-h-screen bg-zinc-900 text-zinc-100 p-4 font-sans">
+  
+  <!-- Header -->
+  <div class="flex items-center justify-between mb-4">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 rounded bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center text-sm font-bold">
+        CR
+      </div>
+      <h1 class="text-lg font-semibold">The Control Room</h1>
+    </div>
+    <div class="flex items-center gap-3">
+      <span class="text-xs text-zinc-500">Total: $0.28 | 4 agents</span>
+      <button class="px-3 py-1.5 bg-orange-600 hover:bg-orange-500 rounded text-sm font-medium transition">
+        + New Agent
+      </button>
+      <button class="p-1.5 hover:bg-zinc-800 rounded transition">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Main Grid -->
+  <div class="grid grid-cols-12 gap-4">
+    
+    <!-- Agent List - Left Sidebar -->
+    <div class="col-span-3 space-y-2">
+      <div class="text-xs text-zinc-500 uppercase tracking-wide mb-2">Agents</div>
+      
+      <!-- Agent 1 - Selected & Running -->
+      <div class="p-3 rounded-lg cursor-pointer transition-all bg-orange-500/20 border border-orange-500">
+        <div class="flex items-center justify-between mb-2">
+          <span class="font-medium text-sm text-zinc-100">Refactor Auth</span>
+          <span class="inline-block w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+        </div>
+        <div class="text-xs text-zinc-400 mb-2 truncate">Refactoring login.ts</div>
+        <div class="flex items-center justify-between text-xs">
+          <span class="text-zinc-500">$0.12</span>
+          <span class="text-zinc-500">2m 34s</span>
+        </div>
+      </div>
+      
+      <!-- Agent 2 - Idle -->
+      <div class="p-3 rounded-lg cursor-pointer transition-all bg-zinc-800/50 border border-zinc-700 hover:border-zinc-500">
+        <div class="flex items-center justify-between mb-2">
+          <span class="font-medium text-sm text-zinc-100">Unit Tests</span>
+          <span class="inline-block w-2 h-2 rounded-full bg-gray-500"></span>
+        </div>
+        <div class="text-xs text-zinc-400 mb-2 truncate">Waiting for input</div>
+        <div class="flex items-center justify-between text-xs">
+          <span class="text-zinc-500">$0.08</span>
+          <span class="text-zinc-500">--</span>
+        </div>
+      </div>
+      
+      <!-- Agent 3 - Completed -->
+      <div class="p-3 rounded-lg cursor-pointer transition-all bg-zinc-800/50 border border-zinc-700 hover:border-zinc-500">
+        <div class="flex items-center justify-between mb-2">
+          <span class="font-medium text-sm text-zinc-100">Documentation</span>
+          <span class="inline-block w-2 h-2 rounded-full bg-blue-500"></span>
+        </div>
+        <div class="text-xs text-zinc-400 mb-2 truncate">Generated API docs</div>
+        <div class="flex items-center justify-between text-xs">
+          <span class="text-zinc-500">$0.05</span>
+          <span class="text-zinc-500">1m 12s</span>
+        </div>
+      </div>
+      
+      <!-- Agent 4 - Error -->
+      <div class="p-3 rounded-lg cursor-pointer transition-all bg-zinc-800/50 border border-zinc-700 hover:border-zinc-500">
+        <div class="flex items-center justify-between mb-2">
+          <span class="font-medium text-sm text-zinc-100">Bug Fix #42</span>
+          <span class="inline-block w-2 h-2 rounded-full bg-red-500"></span>
+        </div>
+        <div class="text-xs text-zinc-400 mb-2 truncate">Failed: permission denied</div>
+        <div class="flex items-center justify-between text-xs">
+          <span class="text-zinc-500">$0.03</span>
+          <span class="text-zinc-500">0m 45s</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Content Area -->
+    <div class="col-span-9 flex flex-col">
+      
+      <!-- Selected Agent Header -->
+      <div class="flex items-center justify-between mb-3 pb-3 border-b border-zinc-800">
+        <div class="flex items-center gap-3">
+          <span class="inline-block w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+          <span class="font-medium">Refactor Auth</span>
+          <span class="text-sm text-zinc-500">| Refactoring login.ts</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <button class="px-3 py-1 bg-zinc-800 hover:bg-zinc-700 rounded text-sm transition">
+            Checkpoint
+          </button>
+          <button class="px-3 py-1 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded text-sm transition">
+            Stop
+          </button>
+        </div>
+      </div>
+
+      <!-- Output Panel -->
+      <div class="flex-1 bg-zinc-950 rounded-lg p-4 mb-3 overflow-y-auto space-y-1 font-mono text-sm" style="max-height: 240px;">
+        <div class="text-zinc-500">Session started: abc123</div>
+        <div class="text-zinc-100">Analyzing auth/login.ts...</div>
+        <div class="text-cyan-400"><span class="text-zinc-500">› </span>Read: src/auth/login.ts</div>
+        <div class="text-zinc-100">Found 3 issues to address:</div>
+        <div class="text-zinc-100">1. Hardcoded timeout value on line 24</div>
+        <div class="text-zinc-100">2. Missing error handling in catch block</div>
+        <div class="text-zinc-100">3. Unused import: lodash</div>
+        <div class="text-cyan-400"><span class="text-zinc-500">› </span>Edit: src/auth/login.ts (lines 24-26)</div>
+      </div>
+
+      <!-- Pending Approval -->
+      <div class="mb-3">
+        <div class="bg-zinc-800 rounded-lg p-3 border border-yellow-500/50">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-yellow-500 text-sm font-medium">⚡ Edit: src/auth/login.ts</span>
+            <div class="flex gap-2">
+              <button class="px-3 py-1 bg-green-600 hover:bg-green-500 rounded text-xs transition">Approve</button>
+              <button class="px-3 py-1 bg-zinc-700 hover:bg-zinc-600 rounded text-xs transition">Deny</button>
+            </div>
+          </div>
+          <pre class="text-xs text-zinc-400 bg-zinc-900 p-2 rounded overflow-x-auto"><span class="text-red-400">- const TIMEOUT = 5000;</span>
+<span class="text-green-400">+ const TIMEOUT = config.AUTH_TIMEOUT ?? 5000;</span></pre>
+        </div>
+      </div>
+
+      <!-- Input Area -->
+      <div class="flex gap-2">
+        <div class="flex-1 relative">
+          <input 
+            type="text" 
+            placeholder="Send a message to this agent... (@ to reference files)"
+            class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-orange-500 transition"
+          />
+        </div>
+        <button class="px-4 py-3 bg-orange-600 hover:bg-orange-500 rounded-lg text-sm font-medium transition">
+          Send
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Status Legend (bottom) -->
+  <div class="mt-6 pt-4 border-t border-zinc-800">
+    <div class="flex items-center gap-6 text-xs text-zinc-500">
+      <span class="flex items-center gap-1.5">
+        <span class="w-2 h-2 rounded-full bg-green-500"></span> Running
+      </span>
+      <span class="flex items-center gap-1.5">
+        <span class="w-2 h-2 rounded-full bg-gray-500"></span> Idle
+      </span>
+      <span class="flex items-center gap-1.5">
+        <span class="w-2 h-2 rounded-full bg-blue-500"></span> Completed
+      </span>
+      <span class="flex items-center gap-1.5">
+        <span class="w-2 h-2 rounded-full bg-red-500"></span> Error
+      </span>
+    </div>
+  </div>
+
+</body>
+</html>
